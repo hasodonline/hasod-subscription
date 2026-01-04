@@ -1,0 +1,31 @@
+{
+  "name": "hasod-subscription-monorepo",
+  "version": "0.1.0",
+  "description": "Hasod Subscription Management System - Monorepo",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @hasod/webapp",
+    "build": "npm run build:shared && npm run build:webapp && npm run build:functions",
+    "build:shared": "npm run build -w @hasod/shared",
+    "build:webapp": "npm run build -w @hasod/webapp",
+    "build:functions": "npm run build -w @hasod/functions",
+    "preview": "npm run preview -w @hasod/webapp",
+    "lint": "npm run lint -w @hasod/webapp",
+    "functions:build": "tsc --project packages/functions/tsconfig.json",
+    "functions:serve": "firebase emulators:start --only functions",
+    "deploy": "firebase deploy --only hosting,functions,firestore",
+    "seed-services": "tsc --project scripts/tsconfig.json && node scripts/dist/seed-services.js",
+    "migrate-data": "tsc --project scripts/tsconfig.json && node scripts/dist/migrate-data.js"
+  },
+  "devDependencies": {
+    "firebase-admin": "^13.6.0",
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0",
+    "npm": ">=9.0.0"
+  }
+}

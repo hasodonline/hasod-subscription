@@ -1,0 +1,294 @@
+import { useEffect, useState } from 'react';
+import { collection, getDocs, deleteDoc, doc } from 'firebase/firestore';
+import { db } from '../firebase';
+import axios from 'axios';
+import { UserProfile, SubscriptionStatus } from '../types/user';
+
+type UserRow = UserProfile & { id: string };
+
+type Statistics = {
+  total: number;
+  active: number;
+  pending: number;
+  canceled: number;
+  expired: number;
+  none: number;
+};
+
+export default function Admin() {
+  const [users, setUsers] = useState<UserRow[]>([]);
+  const [filteredUsers, setFilteredUsers] = useState<UserRow[]>([]);
+  const [searchTerm, setSearchTerm] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('all');
+  const [loading, setLoading] = useState(true);
+  const [stats, setStats] = useState<Statistics>({ total: 0, active: 0, pending: 0, canceled: 0, expired: 0, none: 0 });
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  useEffect(() => {
+    filterUsers();
+  }, [users, searchTerm, statusFilter]);
+
+  async function loadUsers() {
+    setLoading(true);
+    try {
+      const snaps = await getDocs(collection(db, 'users'));
+      const rows: UserRow[] = [];
+      snaps.forEach((d) => rows.push({ id: d.id, ...(d.data() as any) }));
+      setUsers(rows);
+      calculateStats(rows);
+    } catch (error) {
+      console.error('Error loading users:', error);
+      alert('נכשל בטעינת משתמשים');
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  function calculateStats(userList: UserRow[]) {
+    const statistics: Statistics = {
+      total: userList.length,
+      active: 0,
+      pending: 0,
+      canceled: 0,
+      expired: 0,
+      none: 0
+    };
+
+    userList.forEach(u => {
+      const status = u.paypalSubscriptionStatus || 'none';
+      if (status === 'active') statistics.active++;
+      else if (status === 'pending') statistics.pending++;
+      else if (status === 'canceled') statistics.canceled++;
+      else if (status === 'expired') statistics.expired++;
+      else statistics.none++;
+    });
+
+    setStats(statistics);
+  }
+
+  function filterUsers() {
+    let filtered = users;
+
+    // Filter by search term
+    if (searchTerm) {
+      const term = searchTerm.toLowerCase();
+      filtered = filtered.filter(u =>
+        u.name?.toLowerCase().includes(term) ||
+        u.email?.toLowerCase().includes(term) ||
+        u.phone?.includes(term) ||
+        u.paypalSubscriptionId?.includes(term)
+      );
+    }
+
+    // Filter by status
+    if (statusFilter !== 'all') {
+      filtered = filtered.filter(u => (u.paypalSubscriptionStatus || 'none') === statusFilter);
+    }
+
+    setFilteredUsers(filtered);
+  }
+
+  async function removeUser(id: string, email: string) {
+    if (!confirm(`למחוק משתמש ${email}? זה יסיר גם את המנוי שלו.`)) return;
+
+    try {
+      await deleteDoc(doc(db, 'users', id));
+      setUsers(s => s.filter(u => u.id !== id));
+      alert('משתמש נמחק בהצלחה');
+    } catch (error) {
+      console.error('Error deleting user:', error);
+      alert('נכשל במחיקת משתמש');
+    }
+  }
+
+  async function cancelSubscription(uid: string, email: string) {
+    if (!confirm(`לבטל מנוי עבור ${email}?`)) return;
+
+    try {
+      const functionUrl = import.meta.env.VITE_FUNCTIONS_URL || 'http://localhost:5001/hasod-subscription/us-central1/api';
+      await axios.post(`${functionUrl}/admin/cancel-subscription`, { uid });
+      alert('מנוי בוטל בהצלחה');
+      await loadUsers();
+    } catch (error: any) {
+      console.error('Error canceling subscription:', error);
+      alert('נכשל בביטול המנוי: ' + (error.response?.data?.error || error.message));
+    }
+  }
+
+  async function manageGroup(uid: string, action: 'add' | 'remove', email: string) {
+    const actionText = action === 'add' ? 'להוסיף ל' : 'להסיר מ';
+    if (!confirm(`${actionText}קבוצת גוגל: ${email}?`)) return;
+
+    try {
+      const functionUrl = import.meta.env.VITE_FUNCTIONS_URL || 'http://localhost:5001/hasod-subscription/us-central1/api';
+      await axios.post(`${functionUrl}/admin/manage-group`, { uid, action });
+      const successText = action === 'add' ? 'נוסף לקבוצה' : 'הוסר מהקבוצה';
+      alert(`משתמש ${successText} בהצלחה`);
+      await loadUsers();
+    } catch (error: any) {
+      console.error('Error managing group:', error);
+      const failText = action === 'add' ? 'הוספה לקבוצה' : 'הסרה מקבוצה';
+      alert(`נכשל ב${failText}: ` + (error.response?.data?.error || error.message));
+    }
+  }
+
+  function getStatusBadge(status: SubscriptionStatus | undefined) {
+    const s = status || 'none';
+    const colors: Record<string, string> = {
+      active: '#28a745',
+      pending: '#ffc107',
+      canceled: '#dc3545',
+      expired: '#dc3545',
+      suspended: '#fd7e14',
+      none: '#6c757d'
+    };
+    return (
+      <span style={{
+        padding: '4px 8px',
+        borderRadius: '4px',
+        backgroundColor: colors[s],
+        color: 'white',
+        fontSize: '12px',
+        fontWeight: 'bold'
+      }}>
+        {s.toUpperCase()}
+      </span>
+    );
+  }
+
+  if (loading) {
+    return <div className="admin-page">טוען...</div>;
+  }
+
+  return (
+    <div className="admin-page">
+      <h2>לוח בקרה ניהולי</h2>
+
+      {/* Statistics */}
+      <div className="stats-grid">
+        <div className="stat-card">
+          <h4>סה"כ משתמשים</h4>
+          <p>{stats.total}</p>
+        </div>
+        <div className="stat-card" style={{ borderColor: '#00f7c2' }}>
+          <h4 style={{ color: '#00f7c2' }}>פעילים</h4>
+          <p style={{ color: '#00f7c2' }}>{stats.active}</p>
+        </div>
+        <div className="stat-card" style={{ borderColor: '#f59e0b' }}>
+          <h4 style={{ color: '#f59e0b' }}>ממתינים</h4>
+          <p style={{ color: '#f59e0b' }}>{stats.pending}</p>
+        </div>
+        <div className="stat-card" style={{ borderColor: '#ef4444' }}>
+          <h4 style={{ color: '#ef4444' }}>בוטלו/פג תוקף</h4>
+          <p style={{ color: '#ef4444' }}>{stats.canceled + stats.expired}</p>
+        </div>
+        <div className="stat-card">
+          <h4>ללא מנוי</h4>
+          <p>{stats.none}</p>
+        </div>
+      </div>
+
+      {/* Search and Filters */}
+      <div className="filters">
+        <input
+          type="text"
+          placeholder="חיפוש לפי שם, אימייל, טלפון או מזהה מנוי..."
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+        />
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+        >
+          <option value="all">כל הסטטוסים</option>
+          <option value="active">פעיל</option>
+          <option value="pending">ממתין</option>
+          <option value="canceled">בוטל</option>
+          <option value="expired">פג תוקף</option>
+          <option value="none">ללא מנוי</option>
+        </select>
+        <button onClick={loadUsers}>רענן</button>
+      </div>
+
+      {/* Users Table */}
+      <div style={{ overflowX: 'auto' }}>
+        <table>
+          <thead>
+            <tr>
+              <th>שם</th>
+              <th>אימייל</th>
+              <th>טלפון</th>
+              <th>סטטוס</th>
+              <th>בקבוצה</th>
+              <th>מזהה מנוי</th>
+              <th>פעולות</th>
+            </tr>
+          </thead>
+          <tbody>
+            {filteredUsers.length === 0 ? (
+              <tr>
+                <td colSpan={7} style={{ textAlign: 'center', padding: '2rem', color: '#666' }}>
+                  לא נמצאו משתמשים
+                </td>
+              </tr>
+            ) : (
+              filteredUsers.map((u) => (
+                <tr key={u.id}>
+                  <td>{u.name || '-'}</td>
+                  <td>{u.email || '-'}</td>
+                  <td>{u.phone || '-'}</td>
+                  <td>{getStatusBadge(u.paypalSubscriptionStatus)}</td>
+                  <td style={{ fontSize: '1.2rem' }}>{u.inGoogleGroup ? '✓' : '✗'}</td>
+                  <td style={{ fontSize: '0.8rem', fontFamily: 'monospace' }}>{u.paypalSubscriptionId || '-'}</td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap' }}>
+                      {u.paypalSubscriptionStatus === 'active' && (
+                        <button
+                          onClick={() => cancelSubscription(u.id, u.email)}
+                          className="btn-danger"
+                          style={{ padding: '4px 10px', fontSize: '0.85rem', width: 'auto' }}
+                        >
+                          ביטול
+                        </button>
+                      )}
+                      {!u.inGoogleGroup ? (
+                        <button
+                          onClick={() => manageGroup(u.id, 'add', u.email)}
+                          className="btn-success"
+                          style={{ padding: '4px 10px', fontSize: '0.85rem', width: 'auto' }}
+                        >
+                          הוסף
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => manageGroup(u.id, 'remove', u.email)}
+                          className="btn-warning"
+                          style={{ padding: '4px 10px', fontSize: '0.85rem', width: 'auto' }}
+                        >
+                          הסר
+                        </button>
+                      )}
+                      <button
+                        onClick={() => removeUser(u.id, u.email)}
+                        style={{ padding: '4px 10px', fontSize: '0.85rem', width: 'auto', background: '#666', color: 'white' }}
+                      >
+                        מחק
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <p style={{ marginTop: '20px', color: '#9ca3af', fontSize: '0.95rem' }}>
+        מציג {filteredUsers.length} מתוך {users.length} משתמשים
+      </p>
+    </div>
+  );
+}

@@ -1,0 +1,8 @@
+[
+  {
+    "origin": ["https://hasod-41a23.web.app", "https://hasod-41a23.firebaseapp.com", "http://localhost:5000", "http://localhost:5173"],
+    "method": ["GET", "HEAD"],
+    "responseHeader": ["Content-Type", "Content-Length", "Content-Disposition"],
+    "maxAgeSeconds": 3600
+  }
+]

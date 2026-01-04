@@ -1,0 +1,713 @@
+/**
+ * Hasod Subscription Management Cloud Functions
+ *
+ * This module handles PayPal subscription management and Google Group membership
+ * for the Hasod Music Share platform.
+ *
+ * @module functions/index
+ * @requires firebase-functions
+ * @requires firebase-admin
+ * @requires express
+ * @requires axios
+ */
+
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+import express, { Request, Response } from 'express';
+import axios from 'axios';
+import { google } from 'googleapis';
+
+admin.initializeApp();
+const app = express();
+
+// Enable CORS for all routes
+app.use((req, res, next) => {
+  res.set('Access-Control-Allow-Origin', '*');
+  res.set('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.set('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+
+  if (req.method === 'OPTIONS') {
+    res.status(204).send('');
+    return;
+  }
+  next();
+});
+
+app.use(express.json());
+
+/** Google Group email for managing member access */
+const GOOGLE_GROUP_EMAIL = 'hasod-online-member-v1@hasodonline.com';
+
+/** PayPal subscription plan ID */
+const PAYPAL_PLAN_ID = 'P-4TS05390XU019010LNAY3XOI';
+
+/**
+ * Retrieves PayPal configuration from Firebase functions config or environment variables.
+ *
+ * Configuration can be set using:
+ * `firebase functions:config:set paypal.client_id=xxx paypal.client_secret=xxx paypal.sandbox=true`
+ *
+ * @returns {Object} PayPal configuration object
+ * @returns {string} [clientId] - PayPal client ID
+ * @returns {string} [clientSecret] - PayPal client secret
+ * @returns {string} [planId] - PayPal subscription plan ID
+ * @returns {boolean} [sandbox] - Whether to use PayPal sandbox environment
+ * @returns {string} baseUrl - PayPal API base URL
+ */
+const PAYPAL_CONFIG = () => {
+  const cfg = functions.config().paypal || {};
+  return {
+    clientId: cfg.client_id || process.env.PAYPAL_CLIENT_ID,
+    clientSecret: cfg.client_secret || process.env.PAYPAL_CLIENT_SECRET,
+    planId: PAYPAL_PLAN_ID,
+    sandbox: cfg.sandbox === 'true' || cfg.sandbox === true || process.env.PAYPAL_SANDBOX === 'true',
+    baseUrl: (cfg.sandbox === 'true' || cfg.sandbox === true || process.env.PAYPAL_SANDBOX === 'true')
+      ? 'https://api-m.sandbox.paypal.com'
+      : 'https://api-m.paypal.com'
+  } as { clientId?: string; clientSecret?: string; planId?: string; sandbox?: boolean; baseUrl: string };
+};
+
+/**
+ * Retrieves application configuration from Firebase functions config or environment variables.
+ *
+ * @returns {Object} Application configuration object
+ * @returns {string} url - Application base URL for callbacks
+ */
+const APP_CONFIG = () => {
+  const cfg = functions.config().app || {};
+  return {
+    url: cfg.url || process.env.APP_URL || 'http://localhost:5000'
+  };
+};
+
+/**
+ * Obtains an OAuth 2.0 access token from PayPal using client credentials flow.
+ *
+ * @param {string} clientId - PayPal client ID
+ * @param {string} clientSecret - PayPal client secret
+ * @param {string} baseUrl - PayPal API base URL (sandbox or production)
+ * @returns {Promise<string>} PayPal access token
+ * @throws {Error} If authentication fails
+ */
+async function getPayPalAccessToken(clientId: string, clientSecret: string, baseUrl: string): Promise<string> {
+  const tokenUrl = `${baseUrl}/v1/oauth2/token`;
+  const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+  const res = await axios.post(
+    tokenUrl,
+    'grant_type=client_credentials',
+    { headers: { Authorization: `Basic ${auth}`, 'Content-Type': 'application/x-www-form-urlencoded' } }
+  );
+  return res.data.access_token as string;
+}
+
+/**
+ * Creates a new PayPal subscription for a user.
+ *
+ * @param {string} accessToken - PayPal OAuth access token
+ * @param {string} planId - PayPal subscription plan ID
+ * @param {string} baseUrl - PayPal API base URL
+ * @param {string} returnUrl - URL to redirect after successful subscription
+ * @param {string} cancelUrl - URL to redirect if user cancels
+ * @returns {Promise<any>} PayPal subscription object with approval URL
+ * @throws {Error} If subscription creation fails
+ */
+async function createPayPalSubscription(
+  accessToken: string,
+  planId: string,
+  baseUrl: string,
+  returnUrl: string,
+  cancelUrl: string
+): Promise<any> {
+  const url = `${baseUrl}/v1/billing/subscriptions`;
+  const body = {
+    plan_id: planId,
+    application_context: {
+      return_url: returnUrl,
+      cancel_url: cancelUrl,
+      brand_name: 'Hasod Music Share',
+      user_action: 'SUBSCRIBE_NOW'
+    }
+  };
+  const res = await axios.post(url, body, { headers: { Authorization: `Bearer ${accessToken}`, 'Content-Type': 'application/json' } });
+  return res.data;
+}
+
+/**
+ * Retrieves subscription details from PayPal.
+ *
+ * @param {string} accessToken - PayPal OAuth access token
+ * @param {string} subscriptionId - PayPal subscription ID
+ * @param {string} baseUrl - PayPal API base URL
+ * @returns {Promise<any>} PayPal subscription details
+ * @throws {Error} If retrieval fails
+ */
+async function getPayPalSubscription(accessToken: string, subscriptionId: string, baseUrl: string): Promise<any> {
+  const url = `${baseUrl}/v1/billing/subscriptions/${subscriptionId}`;
+  const res = await axios.get(url, { headers: { Authorization: `Bearer ${accessToken}` } });
+  return res.data;
+}
+
+/**
+ * Adds a user to the Google Group for subscription members.
+ *
+ * @param {string} userEmail - Email address of the user to add
+ * @returns {Promise<Object>} Result object with success status and message
+ *
+ * @example
+ * const result = await addUserToGoogleGroup('user@example.com');
+ */
+async function addUserToGoogleGroup(userEmail: string): Promise<{ success: boolean; message: string }> {
+  try {
+    console.log(`Adding user ${userEmail} to Google Group ${GOOGLE_GROUP_EMAIL}`);
+
+    // Get service account credentials from Firebase config
+    const serviceAccountKey = functions.config().google?.service_account_key;
+    const adminEmail = functions.config().google?.admin_email || 'hasod@hasodonline.com';
+
+    if (!serviceAccountKey) {
+      console.error('Google service account key not configured');
+      return { success: false, message: 'Service account not configured' };
+    }
+
+    // Parse the service account key (handle both string and object formats)
+    const credentials = typeof serviceAccountKey === 'string'
+      ? JSON.parse(serviceAccountKey)
+      : serviceAccountKey;
+
+    // Create JWT client with domain-wide delegation
+    const auth = new google.auth.JWT({
+      email: credentials.client_email,
+      key: credentials.private_key,
+      scopes: ['https://www.googleapis.com/auth/admin.directory.group.member'],
+      subject: adminEmail // Impersonate this admin user
+    });
+
+    const adminClient = google.admin({ version: 'directory_v1', auth });
+
+    // Add member to group
+    await adminClient.members.insert({
+      groupKey: GOOGLE_GROUP_EMAIL,
+      requestBody: {
+        email: userEmail,
+        role: 'MEMBER'
+      }
+    });
+
+    console.log(`Successfully added ${userEmail} to ${GOOGLE_GROUP_EMAIL}`);
+    return {
+      success: true,
+      message: `User ${userEmail} added to Google Group`
+    };
+
+  } catch (error: any) {
+    console.error(`Error adding user to Google Group:`, error);
+
+    // Handle specific errors
+    if (error.code === 409) {
+      console.log(`User ${userEmail} is already in the group`);
+      return { success: true, message: 'User already in group' };
+    }
+
+    if (error.code === 404) {
+      console.error(`Group ${GOOGLE_GROUP_EMAIL} not found`);
+      return { success: false, message: 'Google Group not found' };
+    }
+
+    if (error.code === 403) {
+      console.error('Permission denied. Check Domain-wide delegation setup.');
+      return { success: false, message: 'Permission denied - check service account setup' };
+    }
+
+    return { success: false, message: `Error: ${error.message}` };
+  }
+}
+
+/**
+ * Removes a user from the Google Group for subscription members.
+ *
+ * @param {string} userEmail - Email address of the user to remove
+ * @returns {Promise<Object>} Result object with success status and message
+ *
+ * @example
+ * const result = await removeUserFromGoogleGroup('user@example.com');
+ */
+async function removeUserFromGoogleGroup(userEmail: string): Promise<{ success: boolean; message: string }> {
+  try {
+    console.log(`Removing user ${userEmail} from Google Group ${GOOGLE_GROUP_EMAIL}`);
+
+    // Get service account credentials from Firebase config
+    const serviceAccountKey = functions.config().google?.service_account_key;
+    const adminEmail = functions.config().google?.admin_email || 'hasod@hasodonline.com';
+
+    if (!serviceAccountKey) {
+      console.error('Google service account key not configured');
+      return { success: false, message: 'Service account not configured' };
+    }
+
+    // Parse the service account key (handle both string and object formats)
+    const credentials = typeof serviceAccountKey === 'string'
+      ? JSON.parse(serviceAccountKey)
+      : serviceAccountKey;
+
+    // Create JWT client with domain-wide delegation
+    const auth = new google.auth.JWT({
+      email: credentials.client_email,
+      key: credentials.private_key,
+      scopes: ['https://www.googleapis.com/auth/admin.directory.group.member'],
+      subject: adminEmail
+    });
+
+    const adminClient = google.admin({ version: 'directory_v1', auth });
+
+    // Remove member from group
+    await adminClient.members.delete({
+      groupKey: GOOGLE_GROUP_EMAIL,
+      memberKey: userEmail
+    });
+
+    console.log(`Successfully removed ${userEmail} from ${GOOGLE_GROUP_EMAIL}`);
+    return {
+      success: true,
+      message: `User ${userEmail} removed from Google Group`
+    };
+
+  } catch (error: any) {
+    console.error(`Error removing user from Google Group:`, error);
+
+    // Handle specific errors
+    if (error.code === 404) {
+      console.log(`User ${userEmail} was not in the group or group not found`);
+      return { success: true, message: 'User not in group' };
+    }
+
+    if (error.code === 403) {
+      console.error('Permission denied. Check Domain-wide delegation setup.');
+      return { success: false, message: 'Permission denied - check service account setup' };
+    }
+
+    return { success: false, message: `Error: ${error.message}` };
+  }
+}
+
+/**
+ * POST /create-subscription
+ *
+ * Creates a new PayPal subscription for a user and returns an approval URL.
+ * The user must visit the approval URL to complete the subscription setup.
+ *
+ * @route POST /create-subscription
+ * @param {Object} req.body - Request body
+ * @param {string} req.body.uid - Firebase user ID
+ * @returns {Object} 200 - Success response with approval URL
+ * @returns {string} returns.approvalUrl - URL for user to approve subscription
+ * @returns {Object} returns.subscription - Complete PayPal subscription object
+ * @returns {Object} 400 - Missing uid parameter
+ * @returns {Object} 500 - PayPal configuration missing or API error
+ *
+ * @example
+ * POST /create-subscription
+ * {
+ *   "uid": "firebase-user-id-123"
+ * }
+ *
+ * Response:
+ * {
+ *   "approvalUrl": "https://www.paypal.com/...",
+ *   "subscription": { ... }
+ * }
+ */
+app.post('/create-subscription', async (req: Request, res: Response) => {
+  try {
+    const { uid } = req.body as { uid?: string };
+    if (!uid) return res.status(400).json({ error: 'uid required' });
+
+    const cfg = PAYPAL_CONFIG();
+    const appCfg = APP_CONFIG();
+
+    if (!cfg.clientId || !cfg.clientSecret || !cfg.planId) {
+      return res.status(500).json({ error: 'PayPal configuration missing. Set functions.config().paypal.*' });
+    }
+
+    const returnUrl = `${appCfg.url}/paypal-return`;
+    const cancelUrl = `${appCfg.url}/subscriptions`;
+
+    const token = await getPayPalAccessToken(cfg.clientId, cfg.clientSecret, cfg.baseUrl);
+    const sub = await createPayPalSubscription(token, cfg.planId, cfg.baseUrl, returnUrl, cancelUrl);
+
+    // Find approval link
+    const links: Array<{ href: string; rel: string }> = sub.links || [];
+    const approve = links.find((l) => l.rel === 'approve')?.href || null;
+
+    // Save subscription id to Firestore under users/{uid}
+    if (sub.id) {
+      await admin.firestore().doc(`users/${uid}`).set({
+        paypalSubscriptionId: sub.id,
+        paypalSubscriptionStatus: 'pending',
+        updatedAt: admin.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    }
+
+    return res.json({ approvalUrl: approve, subscription: sub });
+  } catch (err: any) {
+    console.error('create-subscription error', err?.response?.data || err.message || err);
+    return res.status(500).json({ error: 'create-subscription failed', detail: err?.response?.data || err.message });
+  }
+});
+
+/**
+ * POST /activate-subscription
+ *
+ * Activates a subscription after the user returns from PayPal approval.
+ * Verifies the subscription status with PayPal and adds the user to Google Group if active.
+ *
+ * @route POST /activate-subscription
+ * @param {Object} req.body - Request body
+ * @param {string} req.body.uid - Firebase user ID
+ * @param {string} req.body.subscriptionId - PayPal subscription ID
+ * @returns {Object} 200 - Success response with subscription status
+ * @returns {boolean} returns.success - Whether activation succeeded
+ * @returns {string} returns.status - Subscription status (active, pending, etc.)
+ * @returns {Object} returns.subscription - Complete PayPal subscription details
+ * @returns {Object} 400 - Missing required parameters
+ * @returns {Object} 500 - PayPal configuration missing or API error
+ *
+ * @example
+ * POST /activate-subscription
+ * {
+ *   "uid": "firebase-user-id-123",
+ *   "subscriptionId": "I-PAYPAL-SUB-ID"
+ * }
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "status": "active",
+ *   "subscription": { ... }
+ * }
+ */
+app.post('/activate-subscription', async (req: Request, res: Response) => {
+  try {
+    const { uid, subscriptionId } = req.body as { uid?: string; subscriptionId?: string };
+    if (!uid || !subscriptionId) {
+      return res.status(400).json({ error: 'uid and subscriptionId required' });
+    }
+
+    const cfg = PAYPAL_CONFIG();
+    if (!cfg.clientId || !cfg.clientSecret) {
+      return res.status(500).json({ error: 'PayPal configuration missing' });
+    }
+
+    // Get subscription details from PayPal
+    const token = await getPayPalAccessToken(cfg.clientId, cfg.clientSecret, cfg.baseUrl);
+    const subscription = await getPayPalSubscription(token, subscriptionId, cfg.baseUrl);
+
+    const status = subscription.status?.toLowerCase() || 'pending';
+    const userRef = admin.firestore().doc(`users/${uid}`);
+    const userSnap = await userRef.get();
+    const userData = userSnap.data();
+    const userEmail = userData?.email;
+
+    // Update user document
+    await userRef.set({
+      paypalSubscriptionId: subscriptionId,
+      paypalSubscriptionStatus: status,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    // If subscription is active, add to Google Group
+    if (status === 'active' && userEmail) {
+      const groupResult = await addUserToGoogleGroup(userEmail);
+      await userRef.set({ inGoogleGroup: true }, { merge: true });
+      console.log('User added to Google Group:', groupResult);
+    }
+
+    return res.json({ success: true, status, subscription });
+  } catch (err: any) {
+    console.error('activate-subscription error', err?.response?.data || err.message || err);
+    return res.status(500).json({ error: 'activate-subscription failed', detail: err?.response?.data || err.message });
+  }
+});
+
+/**
+ * POST /paypal-webhook
+ *
+ * Webhook endpoint for receiving PayPal subscription events.
+ * Automatically updates user subscription status and Google Group membership based on events.
+ *
+ * @route POST /paypal-webhook
+ * @param {Object} req.body - PayPal webhook event payload
+ * @param {string} req.body.event_type - Type of PayPal event
+ * @param {Object} req.body.resource - Event resource data
+ * @param {string} req.body.resource.id - Subscription ID
+ * @param {string} req.body.resource.status - New subscription status
+ * @returns {number} 200 - Event processed successfully
+ * @returns {number} 500 - Error processing event
+ *
+ * @security IMPORTANT: Webhook signature verification not yet implemented.
+ *           Must verify webhook authenticity using PayPal's signature before production use.
+ *
+ * @example
+ * PayPal sends:
+ * {
+ *   "event_type": "BILLING.SUBSCRIPTION.ACTIVATED",
+ *   "resource": {
+ *     "id": "I-PAYPAL-SUB-ID",
+ *     "status": "ACTIVE"
+ *   }
+ * }
+ *
+ * Handled events:
+ * - BILLING.SUBSCRIPTION.ACTIVATED
+ * - BILLING.SUBSCRIPTION.CANCELLED
+ * - BILLING.SUBSCRIPTION.EXPIRED
+ * - BILLING.SUBSCRIPTION.SUSPENDED
+ */
+app.post('/paypal-webhook', async (req: Request, res: Response) => {
+  try {
+    const event = req.body;
+    const eventId = event.id || `webhook_${Date.now()}`;
+
+    // TODO: verify webhook signature using PayPal API to ensure authenticity
+    console.log('paypal webhook event type=', event.event_type);
+
+    // Log webhook event to Firestore for auditing and debugging
+    const webhookLogRef = admin.firestore().collection('webhookEvents').doc(eventId);
+    await webhookLogRef.set({
+      eventId: eventId,
+      eventType: event.event_type || 'unknown',
+      subscriptionId: event.resource?.id || null,
+      status: event.resource?.status || null,
+      payload: event,
+      processedAt: admin.firestore.FieldValue.serverTimestamp(),
+      processed: false,
+      error: null
+    });
+
+    // Handle subscription events
+    if (event.resource && event.resource.id && event.event_type) {
+      const subscriptionId = event.resource.id;
+      const rawStatus = event.resource.status || '';
+      const status = rawStatus.toLowerCase();
+
+      // Find user with this subscription
+      const usersRef = admin.firestore().collection('users');
+      const snaps = await usersRef.where('paypalSubscriptionId', '==', subscriptionId).limit(1).get();
+
+      if (!snaps.empty) {
+        const userDoc = snaps.docs[0];
+        const userData = userDoc.data();
+        const userEmail = userData.email;
+
+        // Update subscription status
+        await userDoc.ref.set({
+          paypalSubscriptionStatus: status,
+          updatedAt: admin.firestore.FieldValue.serverTimestamp()
+        }, { merge: true });
+
+        // Handle Google Group membership based on status
+        if (status === 'active' && userEmail) {
+          await addUserToGoogleGroup(userEmail);
+          await userDoc.ref.set({ inGoogleGroup: true }, { merge: true });
+        } else if (['canceled', 'expired', 'suspended'].includes(status) && userEmail) {
+          await removeUserFromGoogleGroup(userEmail);
+          await userDoc.ref.set({ inGoogleGroup: false }, { merge: true });
+        }
+
+        console.log(`Updated user ${userDoc.id} subscription status to ${status}`);
+
+        // Mark webhook as successfully processed
+        await webhookLogRef.update({
+          processed: true,
+          userId: userDoc.id,
+          userEmail: userEmail
+        });
+      } else {
+        // No user found for this subscription
+        await webhookLogRef.update({
+          processed: true,
+          error: 'No user found with this subscription ID'
+        });
+      }
+    } else {
+      // Invalid webhook structure
+      await webhookLogRef.update({
+        processed: true,
+        error: 'Invalid webhook structure - missing resource or event_type'
+      });
+    }
+
+    res.sendStatus(200);
+  } catch (e) {
+    console.error('webhook error', e);
+
+    // Try to log the error to Firestore
+    try {
+      const errorEventId = req.body?.id || `webhook_error_${Date.now()}`;
+      await admin.firestore().collection('webhookEvents').doc(errorEventId).set({
+        eventId: errorEventId,
+        eventType: req.body?.event_type || 'unknown',
+        payload: req.body,
+        processedAt: admin.firestore.FieldValue.serverTimestamp(),
+        processed: false,
+        error: e instanceof Error ? e.message : String(e)
+      }, { merge: true });
+    } catch (logError) {
+      console.error('Failed to log webhook error to Firestore', logError);
+    }
+
+    res.sendStatus(500);
+  }
+});
+
+/**
+ * POST /admin/manage-group
+ *
+ * Administrative endpoint to manually add or remove users from the Google Group.
+ * Useful for manual intervention or troubleshooting subscription issues.
+ *
+ * @route POST /admin/manage-group
+ * @param {Object} req.body - Request body
+ * @param {string} req.body.uid - Firebase user ID
+ * @param {string} req.body.action - Action to perform ('add' or 'remove')
+ * @returns {Object} 200 - Success response
+ * @returns {boolean} returns.success - Whether action succeeded
+ * @returns {string} returns.message - Success message
+ * @returns {Object} 400 - Missing parameters or invalid action
+ * @returns {Object} 404 - User not found
+ * @returns {Object} 500 - Error managing group membership
+ *
+ * @security WARNING: This endpoint has no authentication. Add authentication middleware before production use.
+ *
+ * @example
+ * POST /admin/manage-group
+ * {
+ *   "uid": "firebase-user-id-123",
+ *   "action": "add"
+ * }
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "message": "User added to group"
+ * }
+ */
+app.post('/admin/manage-group', async (req: Request, res: Response) => {
+  try {
+    const { uid, action } = req.body as { uid?: string; action?: 'add' | 'remove' };
+    if (!uid || !action) {
+      return res.status(400).json({ error: 'uid and action required' });
+    }
+
+    const userRef = admin.firestore().doc(`users/${uid}`);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const userData = userSnap.data();
+    const userEmail = userData?.email;
+    if (!userEmail) {
+      return res.status(400).json({ error: 'User email not found' });
+    }
+
+    if (action === 'add') {
+      await addUserToGoogleGroup(userEmail);
+      await userRef.set({ inGoogleGroup: true }, { merge: true });
+      return res.json({ success: true, message: 'User added to group' });
+    } else if (action === 'remove') {
+      await removeUserFromGoogleGroup(userEmail);
+      await userRef.set({ inGoogleGroup: false }, { merge: true });
+      return res.json({ success: true, message: 'User removed from group' });
+    }
+
+    return res.status(400).json({ error: 'Invalid action' });
+  } catch (err: any) {
+    console.error('manage-group error', err);
+    return res.status(500).json({ error: 'Failed to manage group', detail: err.message });
+  }
+});
+
+/**
+ * POST /admin/cancel-subscription
+ *
+ * Administrative endpoint to cancel a user's PayPal subscription.
+ * Cancels the subscription with PayPal and removes the user from the Google Group.
+ *
+ * @route POST /admin/cancel-subscription
+ * @param {Object} req.body - Request body
+ * @param {string} req.body.uid - Firebase user ID
+ * @returns {Object} 200 - Success response
+ * @returns {boolean} returns.success - Whether cancellation succeeded
+ * @returns {string} returns.message - Success message
+ * @returns {Object} 400 - Missing uid or no subscription found
+ * @returns {Object} 404 - User not found
+ * @returns {Object} 500 - PayPal configuration missing or API error
+ *
+ * @security WARNING: This endpoint has no authentication. Add authentication middleware before production use.
+ *
+ * @example
+ * POST /admin/cancel-subscription
+ * {
+ *   "uid": "firebase-user-id-123"
+ * }
+ *
+ * Response:
+ * {
+ *   "success": true,
+ *   "message": "Subscription canceled"
+ * }
+ */
+app.post('/admin/cancel-subscription', async (req: Request, res: Response) => {
+  try {
+    const { uid } = req.body as { uid?: string };
+    if (!uid) {
+      return res.status(400).json({ error: 'uid required' });
+    }
+
+    const userRef = admin.firestore().doc(`users/${uid}`);
+    const userSnap = await userRef.get();
+    if (!userSnap.exists) {
+      return res.status(404).json({ error: 'User not found' });
+    }
+
+    const userData = userSnap.data();
+    const subscriptionId = userData?.paypalSubscriptionId;
+    if (!subscriptionId) {
+      return res.status(400).json({ error: 'No subscription found for user' });
+    }
+
+    const cfg = PAYPAL_CONFIG();
+    if (!cfg.clientId || !cfg.clientSecret) {
+      return res.status(500).json({ error: 'PayPal configuration missing' });
+    }
+
+    // Cancel subscription with PayPal
+    const token = await getPayPalAccessToken(cfg.clientId, cfg.clientSecret, cfg.baseUrl);
+    const cancelUrl = `${cfg.baseUrl}/v1/billing/subscriptions/${subscriptionId}/cancel`;
+    await axios.post(
+      cancelUrl,
+      { reason: 'Canceled by administrator' },
+      { headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' } }
+    );
+
+    // Update Firestore
+    await userRef.set({
+      paypalSubscriptionStatus: 'canceled',
+      inGoogleGroup: false,
+      updatedAt: admin.firestore.FieldValue.serverTimestamp()
+    }, { merge: true });
+
+    // Remove from Google Group
+    const userEmail = userData?.email;
+    if (userEmail) {
+      await removeUserFromGoogleGroup(userEmail);
+    }
+
+    return res.json({ success: true, message: 'Subscription canceled' });
+  } catch (err: any) {
+    console.error('cancel-subscription error', err?.response?.data || err.message || err);
+    return res.status(500).json({ error: 'Failed to cancel subscription', detail: err?.response?.data || err.message });
+  }
+});
+
+export const api = functions.https.onRequest(app);

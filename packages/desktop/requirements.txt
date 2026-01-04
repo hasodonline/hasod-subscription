@@ -1,0 +1,34 @@
+# Core Dependencies
+customtkinter
+pillow
+packaging
+tkinterdnd2
+pyobjc-framework-Cocoa; sys_platform == 'darwin'
+pyobjc-framework-Quartz; sys_platform == 'darwin'
+PySide6
+
+# Download Engines
+yt-dlp
+spotdl
+
+# Spotify API & Metadata
+spotipy
+mutagen
+
+# Utilities
+pyperclip
+requests
+python-dotenv
+
+# Cloud Storage
+google-auth-oauthlib
+google-auth-httplib2
+google-api-python-client
+dropbox
+
+# File Search
+whoosh
+tenacity
+
+# Packaging
+pyinstaller

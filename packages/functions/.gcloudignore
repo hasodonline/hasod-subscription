@@ -1,0 +1,35 @@
+# This file specifies files that are intentionally untracked by gcloud
+# and should NOT be uploaded to Google Cloud Functions
+
+# TypeScript source (we deploy compiled JS from lib/)
+src/
+
+# Development dependencies
+node_modules/
+
+# Test files
+*.test.ts
+*.test.js
+
+# Build artifacts
+tsconfig.json
+tsconfig.*.json
+
+# Git files
+.git/
+.gitignore
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IMPORTANT: Explicitly include bin/ directory with yt-dlp
+!bin/
+!bin/yt-dlp

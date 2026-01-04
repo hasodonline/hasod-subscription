@@ -1,0 +1,37 @@
+{"users": [
+{
+  "localId": "vMmjyu8gFoblqXYiqLiSWfCxCT03",
+  "email": "yubarkan@gmail.com",
+  "emailVerified": true,
+  "displayName": "Yuval Barkan",
+  "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIqMHk5v9xYZPeIYZc6S4TFK7nJ6wOqxWyaEfZ6WEnMqJodzXlx=s96-c",
+  "lastSignedInAt": "1767344711072",
+  "createdAt": "1767344711071",
+  "providerUserInfo": [
+    {
+      "providerId": "google.com",
+      "rawId": "102103199183840515771",
+      "email": "yubarkan@gmail.com",
+      "displayName": "Yuval Barkan",
+      "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocIqMHk5v9xYZPeIYZc6S4TFK7nJ6wOqxWyaEfZ6WEnMqJodzXlx=s96-c"
+    }
+  ]
+},
+{
+  "localId": "zwgCzOE3vggeiEddhKAR6OrHtYM2",
+  "email": "keren@flexipur.co.il",
+  "emailVerified": true,
+  "displayName": "Keren Eisenkeit",
+  "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocJm8apzYSUaO3Z99xX_ImloTYCV6c3G_fLRMzteC5HufUeyIg=s96-c",
+  "lastSignedInAt": "1767345509615",
+  "createdAt": "1767345509614",
+  "providerUserInfo": [
+    {
+      "providerId": "google.com",
+      "rawId": "106142303851464688221",
+      "email": "keren@flexipur.co.il",
+      "displayName": "Keren Eisenkeit",
+      "photoUrl": "https://lh3.googleusercontent.com/a/ACg8ocJm8apzYSUaO3Z99xX_ImloTYCV6c3G_fLRMzteC5HufUeyIg=s96-c"
+    }
+  ]
+}]}

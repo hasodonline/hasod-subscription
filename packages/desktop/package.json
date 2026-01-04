@@ -1,0 +1,30 @@
+{
+  "name": "@hasod/desktop",
+  "version": "0.1.0",
+  "description": "Hasod Desktop Application for Windows and macOS",
+  "private": true,
+  "main": "dist/main/index.js",
+  "author": "Hasod Online",
+  "license": "UNLICENSED",
+  "scripts": {
+    "dev": "echo 'Desktop app not yet implemented. See README.md for setup instructions.'",
+    "build": "echo 'Desktop app not yet implemented. See README.md for setup instructions.'",
+    "package:mac": "echo 'Desktop app not yet implemented. See README.md for setup instructions.'",
+    "package:win": "echo 'Desktop app not yet implemented. See README.md for setup instructions.'"
+  },
+  "keywords": [
+    "electron",
+    "tauri",
+    "desktop",
+    "subscription",
+    "hasod"
+  ],
+  "dependencies": {
+  },
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

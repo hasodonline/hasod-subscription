@@ -1,0 +1,33 @@
+{
+  "name": "@hasod/shared",
+  "version": "0.1.0",
+  "description": "Shared types, utilities, and API client for Hasod applications",
+  "private": true,
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "clean": "rm -rf dist"
+  },
+  "exports": {
+    ".": "./dist/index.js",
+    "./types": "./dist/types/index.js",
+    "./utils": "./dist/utils/index.js",
+    "./constants": "./dist/constants/index.js",
+    "./api": "./dist/api/index.js"
+  },
+  "keywords": [
+    "shared",
+    "types",
+    "utilities"
+  ],
+  "author": "Hasod Online",
+  "license": "UNLICENSED",
+  "devDependencies": {
+    "typescript": "^5.7.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
