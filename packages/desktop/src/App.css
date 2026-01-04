@@ -1,0 +1,356 @@
+:root {
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  line-height: 1.6;
+  font-weight: 400;
+  color: #ffffff;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+}
+
+.app-container {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Header */
+.app-header {
+  text-align: center;
+  padding: 30px 20px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.app-header h1 {
+  font-size: 32px;
+  font-weight: 700;
+  margin-bottom: 10px;
+  background: linear-gradient(135deg, #3B8ED0, #1F6AA5);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.app-header p {
+  color: #a0a0a0;
+  font-size: 14px;
+}
+
+/* Tabs */
+.tabs {
+  display: flex;
+  gap: 10px;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.tab {
+  flex: 1;
+  padding: 12px 24px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: #ffffff;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.tab:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(59, 142, 208, 0.5);
+}
+
+.tab.active {
+  background: linear-gradient(135deg, #3B8ED0, #1F6AA5);
+  border-color: #3B8ED0;
+  box-shadow: 0 4px 12px rgba(59, 142, 208, 0.3);
+}
+
+.tab:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* Content */
+.content {
+  flex: 1;
+  padding: 30px;
+  overflow-y: auto;
+}
+
+/* License Tab */
+.license-tab h2,
+.download-tab h2 {
+  margin-bottom: 20px;
+  color: #ffffff;
+}
+
+.loading {
+  text-align: center;
+  color: #3B8ED0;
+  font-size: 16px;
+}
+
+.status-card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  border-radius: 15px;
+  padding: 25px;
+  margin-bottom: 20px;
+}
+
+.status-card.valid {
+  border-color: rgba(46, 204, 113, 0.5);
+  background: rgba(46, 204, 113, 0.05);
+}
+
+.status-card.invalid {
+  border-color: rgba(231, 76, 60, 0.5);
+  background: rgba(231, 76, 60, 0.05);
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 8px 16px;
+  border-radius: 8px;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.status-badge.success {
+  background: rgba(46, 204, 113, 0.2);
+  color: #2ecc71;
+}
+
+.status-badge.error {
+  background: rgba(231, 76, 60, 0.2);
+  color: #e74c3c;
+}
+
+.status-details {
+  margin: 20px 0;
+}
+
+.status-details p {
+  margin: 10px 0;
+  color: #d0d0d0;
+}
+
+.status-details code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 4px 8px;
+  border-radius: 4px;
+  color: #3B8ED0;
+  font-family: 'Courier New', monospace;
+  font-size: 12px;
+}
+
+.error-message {
+  color: #f39c12 !important;
+  font-weight: 600;
+}
+
+.actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+/* Buttons */
+.btn-primary,
+.btn-secondary,
+.btn-download {
+  padding: 12px 24px;
+  border: none;
+  border-radius: 10px;
+  font-size: 14px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.3s ease;
+}
+
+.btn-primary {
+  background: linear-gradient(135deg, #4285F4, #357ae8);
+  color: white;
+}
+
+.btn-primary:hover {
+  background: linear-gradient(135deg, #357ae8, #2b66cc);
+  box-shadow: 0 4px 12px rgba(66, 133, 244, 0.4);
+}
+
+.btn-secondary {
+  background: rgba(255, 255, 255, 0.05);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.1);
+  border-color: rgba(255, 255, 255, 0.2);
+}
+
+.btn-secondary:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.btn-download {
+  background: linear-gradient(135deg, #3B8ED0, #1F6AA5);
+  color: white;
+  width: 100%;
+  margin-top: 10px;
+}
+
+.btn-download:hover:not(:disabled) {
+  background: linear-gradient(135deg, #36719F, #144870);
+  box-shadow: 0 4px 16px rgba(59, 142, 208, 0.4);
+}
+
+.btn-download:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Download Tab */
+.warning-box {
+  background: rgba(243, 156, 18, 0.1);
+  border: 2px solid rgba(243, 156, 18, 0.5);
+  border-radius: 10px;
+  padding: 15px;
+  margin-bottom: 20px;
+  color: #f39c12;
+  font-weight: 600;
+}
+
+.download-form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.url-input {
+  width: 100%;
+  padding: 14px 20px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 2px solid rgba(59, 142, 208, 0.3);
+  border-radius: 12px;
+  color: #ffffff;
+  font-size: 14px;
+}
+
+.url-input:focus {
+  outline: none;
+  border-color: #3B8ED0;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.url-input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.progress-box {
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  padding: 15px;
+  margin-bottom: 20px;
+}
+
+.progress-box h3 {
+  color: #3B8ED0;
+  margin-bottom: 10px;
+  font-size: 14px;
+}
+
+.progress-output {
+  max-height: 300px;
+  overflow-y: auto;
+  background: rgba(0, 0, 0, 0.5);
+  padding: 10px;
+  border-radius: 8px;
+  color: #a0a0a0;
+  font-size: 12px;
+  font-family: 'Courier New', monospace;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+}
+
+/* Info Box */
+.info-box {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  padding: 20px;
+  margin-top: 20px;
+}
+
+.info-box h3 {
+  color: #3B8ED0;
+  margin-bottom: 12px;
+  font-size: 16px;
+}
+
+.info-box ol,
+.info-box ul {
+  margin-left: 20px;
+  color: #d0d0d0;
+}
+
+.info-box li {
+  margin: 8px 0;
+}
+
+.info-box .note {
+  margin-top: 15px;
+  color: #a0a0a0;
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* Footer */
+.app-footer {
+  text-align: center;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+  color: #808080;
+  font-size: 13px;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar {
+  width: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.2);
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(59, 142, 208, 0.5);
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(59, 142, 208, 0.8);
+}

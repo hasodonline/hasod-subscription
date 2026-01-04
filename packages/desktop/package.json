@@ -1,30 +1,30 @@
 {
   "name": "@hasod/desktop",
-  "version": "0.1.0",
-  "description": "Hasod Desktop Application for Windows and macOS",
   "private": true,
-  "main": "dist/main/index.js",
-  "author": "Hasod Online",
-  "license": "UNLICENSED",
+  "version": "0.1.0",
+  "description": "Hasod Downloads - Desktop app for YouTube, Spotify, SoundCloud downloads",
+  "type": "module",
   "scripts": {
-    "dev": "echo 'Desktop app not yet implemented. See README.md for setup instructions.'",
-    "build": "echo 'Desktop app not yet implemented. See README.md for setup instructions.'",
-    "package:mac": "echo 'Desktop app not yet implemented. See README.md for setup instructions.'",
-    "package:win": "echo 'Desktop app not yet implemented. See README.md for setup instructions.'"
+    "dev": "tauri dev",
+    "build": "tsc && vite build && tauri build",
+    "build:mac": "tsc && vite build && tauri build --target aarch64-apple-darwin",
+    "build:win": "tsc && vite build && tauri build --target x86_64-pc-windows-msvc",
+    "preview": "vite preview",
+    "tauri": "tauri"
   },
-  "keywords": [
-    "electron",
-    "tauri",
-    "desktop",
-    "subscription",
-    "hasod"
-  ],
   "dependencies": {
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@tauri-apps/plugin-shell": "^2.3.3",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0"
   },
   "devDependencies": {
-    "typescript": "^5.7.0"
-  },
-  "engines": {
-    "node": ">=20.0.0"
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
   }
 }

@@ -1,0 +1,83 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Hasod Downloads",
+  "version": "0.1.0",
+  "identifier": "com.hasodonline.downloads",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "Hasod Downloads - מוריד הסוד",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "minWidth": 800,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "externalBin": [
+      "binaries/yt-dlp",
+      "binaries/ffmpeg"
+    ],
+    "resources": [
+      "binaries/*"
+    ],
+    "longDescription": "Desktop application for downloading music from YouTube, Spotify, and SoundCloud. Requires active Hasod subscription for license validation.",
+    "shortDescription": "Music downloader with license validation",
+    "copyright": "Copyright © 2026 Hasod Online",
+    "macOS": {
+      "minimumSystemVersion": "10.15",
+      "entitlements": null,
+      "exceptionDomain": "",
+      "frameworks": [],
+      "providerShortName": null,
+      "signingIdentity": null
+    },
+    "windows": {
+      "certificateThumbprint": null,
+      "digestAlgorithm": "sha256",
+      "timestampUrl": "",
+      "wix": {
+        "language": ["en-US", "he-IL"]
+      }
+    }
+  },
+  "plugins": {
+    "shell": {
+      "open": true,
+      "scope": [
+        {
+          "name": "yt-dlp",
+          "cmd": "binaries/yt-dlp",
+          "sidecar": true,
+          "args": true
+        },
+        {
+          "name": "ffmpeg",
+          "cmd": "binaries/ffmpeg",
+          "sidecar": true,
+          "args": true
+        }
+      ]
+    }
+  }
+}
