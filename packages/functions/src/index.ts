@@ -249,16 +249,20 @@ app.get('/user/subscription-status', async (req: Request, res: Response, next: N
       });
     }
 
-    // Get user document from Firestore
-    const userDoc = await admin.firestore().collection('users').doc(userEmail).get();
+    // Query user by email field (users are stored by Firebase UID, not email)
+    const usersSnapshot = await admin.firestore().collection('users')
+      .where('email', '==', userEmail)
+      .limit(1)
+      .get();
 
-    if (!userDoc.exists) {
+    if (usersSnapshot.empty) {
       return res.status(404).json({
         error: 'User not found',
         email: userEmail
       });
     }
 
+    const userDoc = usersSnapshot.docs[0];
     const userData = userDoc.data();
 
     // Return user email and services

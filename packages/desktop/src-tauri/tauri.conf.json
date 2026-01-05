@@ -6,10 +6,11 @@
   "build": {
     "beforeDevCommand": "npm run dev",
     "devUrl": "http://localhost:1420",
-    "beforeBuildCommand": "npm run build",
+    "beforeBuildCommand": "tsc && vite build",
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Hasod Downloads - מוריד הסוד",
@@ -17,7 +18,8 @@
         "height": 800,
         "resizable": true,
         "minWidth": 800,
-        "minHeight": 600
+        "minHeight": 600,
+        "dragDropEnabled": true
       }
     ],
     "security": {
@@ -35,11 +37,11 @@
       "icons/icon.ico"
     ],
     "externalBin": [
-      "binaries/yt-dlp",
-      "binaries/ffmpeg"
+      "../binaries/yt-dlp",
+      "../binaries/ffmpeg"
     ],
     "resources": [
-      "binaries/*"
+      "../binaries/*"
     ],
     "longDescription": "Desktop application for downloading music from YouTube, Spotify, and SoundCloud. Requires active Hasod subscription for license validation.",
     "shortDescription": "Music downloader with license validation",
@@ -63,21 +65,7 @@
   },
   "plugins": {
     "shell": {
-      "open": true,
-      "scope": [
-        {
-          "name": "yt-dlp",
-          "cmd": "binaries/yt-dlp",
-          "sidecar": true,
-          "args": true
-        },
-        {
-          "name": "ffmpeg",
-          "cmd": "binaries/ffmpeg",
-          "sidecar": true,
-          "args": true
-        }
-      ]
+      "open": true
     }
   }
 }

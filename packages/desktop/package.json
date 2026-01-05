@@ -5,7 +5,8 @@
   "description": "Hasod Downloads - Desktop app for YouTube, Spotify, SoundCloud downloads",
   "type": "module",
   "scripts": {
-    "dev": "tauri dev",
+    "dev": "vite",
+    "dev:tauri": "tauri dev",
     "build": "tsc && vite build && tauri build",
     "build:mac": "tsc && vite build && tauri build --target aarch64-apple-darwin",
     "build:win": "tsc && vite build && tauri build --target x86_64-pc-windows-msvc",
@@ -15,7 +16,7 @@
   "dependencies": {
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-opener": "^2",
-    "@tauri-apps/plugin-shell": "^2.3.3",
+    "@tauri-apps/plugin-shell": "^2",
     "react": "^19.1.0",
     "react-dom": "^19.1.0"
   },

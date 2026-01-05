@@ -1,0 +1,13 @@
+# Hasod Desktop App - Build Configuration
+#
+# Setup:
+# 1. Create folder: mkdir .cargo
+# 2. Copy this file: cp cargo-config.toml.example .cargo/config.toml
+# 3. Fill in the actual values in .cargo/config.toml
+#
+# The .cargo/ folder is gitignored to keep secrets safe.
+
+[env]
+HASOD_FIREBASE_API_KEY = "your-firebase-api-key"
+HASOD_GOOGLE_OAUTH_CLIENT_ID = "your-google-oauth-client-id.apps.googleusercontent.com"
+HASOD_GOOGLE_OAUTH_CLIENT_SECRET = "your-google-oauth-client-secret"

@@ -247,14 +247,18 @@ app.get('/user/subscription-status', async (req, res, next) => {
                 message: 'Please provide email parameter or Bearer token'
             });
         }
-        // Get user document from Firestore
-        const userDoc = await admin.firestore().collection('users').doc(userEmail).get();
-        if (!userDoc.exists) {
+        // Query user by email field (users are stored by Firebase UID, not email)
+        const usersSnapshot = await admin.firestore().collection('users')
+            .where('email', '==', userEmail)
+            .limit(1)
+            .get();
+        if (usersSnapshot.empty) {
             return res.status(404).json({
                 error: 'User not found',
                 email: userEmail
             });
         }
+        const userDoc = usersSnapshot.docs[0];
         const userData = userDoc.data();
         // Return user email and services
         res.json({

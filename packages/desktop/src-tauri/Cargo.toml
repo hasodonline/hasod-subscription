@@ -13,7 +13,12 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["devtools"] }
+tauri = { version = "2", features = ["devtools", "tray-icon", "image-png", "macos-private-api"] }
+
+# macOS native window APIs
+[target.'cfg(target_os = "macos")'.dependencies]
+cocoa = "0.26"
+objc = "0.2"
 tauri-plugin-opener = "2"
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }
@@ -23,4 +28,16 @@ tokio = { version = "1", features = ["full"] }
 uuid = { version = "1.11", features = ["v4", "serde"] }
 dirs = "5"
 chrono = { version = "0.4", features = ["serde"] }
+
+# OAuth 2.0 + PKCE dependencies
+keyring = "2"
+sha2 = "0.10"
+base64 = "0.22"
+rand = "0.8"
+tiny_http = "0.12"
+machine-uid = "0.5"
+url = "2"
+hex = "0.4"
+urlencoding = "2"
+
 
