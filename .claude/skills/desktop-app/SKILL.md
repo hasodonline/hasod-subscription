@@ -1,354 +1,314 @@
 ---
 name: desktop-app
-description: Develop Python desktop application (packages/desktop/) with Qt UI for downloading music from YouTube, Spotify, and SoundCloud. Includes license validation against Hasod subscription system, Google OAuth, and building macOS/Windows installers. Based on DJ Downloader architecture.
+description: Develop Tauri desktop application (packages/desktop/) with Rust backend and React frontend. Features native macOS floating drop zone panel, Google OAuth with PKCE, keychain auth storage, and yt-dlp downloads. Use when working on desktop app, floating panel, OAuth flow, or download functionality.
 ---
 
 # Desktop Application Development Skill
 
-## When to Use This Skill
-
-Activate this skill for:
-- Desktop app development (Python + PySide6)
-- License validation integration with Hasod API
-- Download functionality (YouTube, Spotify, SoundCloud)
-- UI development (Qt components)
-- Build & packaging (DMG, NSIS)
-- Testing desktop app
-
-**Do NOT use for:**
-- Webapp (`packages/webapp/`)
-- Backend functions (`packages/functions/`)
-- Modifying shared package (`packages/shared/`) - read-only
-
-## Quick Commands
+## Quick Reference
 
 ```bash
-# Setup
-cd packages/desktop
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-pip install -r requirements.txt
-
 # Development
-python main.py             # Run app
+cd packages/desktop && npm run dev
 
-# Building
-./build.sh                 # macOS app
-./build_dmg.sh            # macOS DMG installer
-python build.bat          # Windows executable
-./build_installer.sh      # Windows installer
+# Build (creates .app and .dmg)
+cd packages/desktop && npm run build
 
-# Testing
-python -m pytest          # Run tests
-python test_desktop_license.py  # Test license validation
+# Run built app directly
+./packages/desktop/src-tauri/target/release/bundle/macos/Hasod\ Downloads.app/Contents/MacOS/hasod-downloads
 ```
 
-## Architecture
+## When to Use This Skill
 
-### Tech Stack
-- **Language:** Python 3.9+
-- **UI:** PySide6 (Qt6)
-- **Downloads:** yt-dlp, spotdl
-- **Auth:** Google OAuth (google-auth)
-- **HTTP:** requests library
+Use for:
+- Tauri desktop app development (Rust backend + React frontend)
+- Floating drop zone panel (NSPanel + WKWebView)
+- Google OAuth authentication with PKCE
+- Download functionality (yt-dlp sidecar)
+- License validation against Hasod API
+- macOS/Windows builds and distribution
 
-### Project Structure
+Do NOT use for:
+- Webapp (`packages/webapp/`) → use webapp-backend skill
+- Backend functions (`packages/functions/`) → use webapp-backend skill
+- Modifying shared package (`packages/shared/`) → read-only for this skill
+
+## Architecture Overview
+
 ```
 packages/desktop/
-├── main.py                      # Entry point
-├── requirements.txt
-├── src/
-│   ├── downloaders/             # Download logic
-│   │   ├── download_manager.py
-│   │   ├── youtube_downloader.py
-│   │   └── spotify_downloader.py
-│   ├── gui/                     # Qt UI
-│   │   ├── main_window_qt.py
-│   │   ├── license_tab.py       # License validation UI
-│   │   └── ...
-│   ├── search/                  # Search functionality
-│   └── utils/
-│       ├── license_manager.py   # Hasod API integration
-│       ├── google_auth.py
-│       └── ...
-├── build.sh                     # macOS build
-├── build_dmg.sh                # DMG creator
-└── icon.png                    # App icon
+├── src/                          # React frontend (TypeScript)
+│   ├── App.tsx                   # Main UI, event listeners
+│   ├── App.css                   # Dark theme styling
+│   └── main.tsx                  # Entry point
+├── src-tauri/                    # Rust backend
+│   ├── src/
+│   │   └── lib.rs                # Core logic (1300+ lines)
+│   ├── .cargo/config.toml        # OAuth secrets (gitignored)
+│   ├── cargo-config.toml.example # Template for secrets
+│   ├── Cargo.toml                # Rust dependencies
+│   ├── tauri.conf.json           # Tauri configuration
+│   └── binaries/                 # yt-dlp, ffmpeg sidecars
+└── package.json
 ```
 
-## License Validation
+## Floating Drop Zone Panel
 
-### Integration with Hasod API
+### How It Works
 
-**API Endpoint:** `https://us-central1-hasod-41a23.cloudfunctions.net/api`
+The floating panel stays visible above ALL windows (including fullscreen apps) using native macOS NSPanel instead of Tauri's WebviewWindow.
 
-**License Manager:** `src/utils/license_manager.py`
+**Architecture:**
+1. **NSPanel** (not NSWindow) with `NSWindowStyleMaskNonactivatingPanel`
+2. **WKWebView** inside panel for HTML/CSS/JS UI
+3. **WKScriptMessageHandler** bridges JS → Rust
+4. **Tauri events** bridge Rust → React frontend
 
-**Required Service:** `hasod-downloader` (מוריד הסוד)
+### Communication Flow
 
-### License Flow
-
-1. User launches app
-2. Navigates to License tab
-3. Clicks "Login with Google"
-4. Authenticates with Hasod account
-5. App calls `/user/subscription-status`
-6. Checks if `hasod-downloader` service is "active"
-7. If YES → Full download access
-8. If NO → Registration prompt
-
-### License States
-
-- **registered**: Active subscription - full access
-- **not_registered**: No subscription - show registration page
-- **expired**: Subscription expired - renewal needed
-- **suspended**: Subscription cancelled - contact support
-- **error**: API/network error - retry
-
-### Testing License
-
-```python
-from src.utils.license_manager import get_license_manager
-
-lm = get_license_manager()
-result = lm.check_license('user@example.com')
-print(f"Valid: {result['is_valid']}")
-print(f"Status: {result['status']}")
+```
+[User drops URL on floating panel]
+        ↓
+[WKWebView JS: drop event]
+        ↓
+[JS calls: webkit.messageHandlers.urlDropped.postMessage(url)]
+        ↓
+[Rust: WKScriptMessageHandler receives message]
+        ↓
+[Rust: app.emit("floating-url-dropped", url)]
+        ↓
+[React: listen<string>("floating-url-dropped", callback)]
+        ↓
+[React: invoke("download_youtube", {url, outputDir})]
 ```
 
-## Key Features
+### Key Code Locations
 
-### Downloads
-- **YouTube:** Videos, playlists (yt-dlp)
-- **Spotify:** Tracks, albums, playlists (spotdl)
-- **SoundCloud:** Tracks, playlists
-- **Quality:** High-quality MP3 with metadata
-- **Batch:** Album/playlist support
+**Rust (lib.rs):**
+- `FLOATING_PANEL: Mutex<Option<usize>>` - Panel pointer storage (line ~120)
+- `FLOATING_APP_HANDLE: Mutex<Option<AppHandle>>` - For event emission (line ~122)
+- `create_url_handler_class()` - WKScriptMessageHandler for URL drops (line ~1000)
+- `create_drag_handler_class()` - WKScriptMessageHandler for dragging (line ~1060)
+- `toggle_floating_window()` - Creates/destroys NSPanel (line ~1120)
 
-### UI
-- Modern dark theme (Qt stylesheet)
-- Hebrew/English bilingual
-- Progress tracking
-- Download queue management
-- Search integration
+**React (App.tsx):**
+- `handleFloatingDownload()` - Processes dropped URLs (line ~53)
+- `listen("floating-url-dropped", ...)` - Event listener (line ~94)
+
+### NSPanel Configuration
+
+```rust
+// Style mask: Borderless + NonactivatingPanel
+let style_mask: u64 = 0 | (1 << 7);
+
+// Collection behavior: CanJoinAllSpaces + FullScreenAuxiliary
+let behavior: u64 = (1 << 0) | (1 << 8); // = 257
+
+// Window level: NSStatusWindowLevel (above fullscreen)
+let _: () = msg_send![panel, setLevel: 25i64];
+```
+
+### Dragging Implementation
+
+WKWebView blocks `setMovableByWindowBackground`, so dragging is implemented via JS:
+1. JS tracks mousedown/mousemove/mouseup events
+2. JS sends dx/dy deltas to `webkit.messageHandlers.moveWindow`
+3. Rust adjusts panel frame origin
+
+## OAuth Authentication
+
+### Flow (PKCE)
+
+1. `start_google_login()` - Generate code_verifier, code_challenge, auth URL
+2. Open browser to Google OAuth consent screen
+3. `wait_for_oauth_callback()` - Local HTTP server on port 8420
+4. `exchange_oauth_code()` - Exchange code for tokens with Google
+5. Sign in to Firebase with Google ID token
+6. Store auth in macOS Keychain via `security-framework`
+
+### Environment Variables
+
+OAuth secrets are compile-time env vars (not in source code):
+
+```bash
+# Create .cargo/config.toml from template
+cd packages/desktop/src-tauri
+mkdir -p .cargo
+cp cargo-config.toml.example .cargo/config.toml
+# Edit .cargo/config.toml with actual values
+```
+
+**Required variables:**
+- `HASOD_FIREBASE_API_KEY`
+- `HASOD_GOOGLE_OAUTH_CLIENT_ID`
+- `HASOD_GOOGLE_OAUTH_CLIENT_SECRET`
+
+### Keychain Storage
+
+Auth tokens stored securely in macOS Keychain:
+- Service: `hasod-downloads`
+- Account: `auth`
+- Data: JSON with email, id_token, refresh_token, expires_at, device_id
+
+## Tauri Commands
+
+### License Management
+```rust
+get_device_uuid() -> String
+get_registration_url() -> String
+get_stored_auth() -> Option<StoredAuth>
+check_license(user_email: String) -> LicenseStatus
+start_google_login() -> OAuthStartResult
+wait_for_oauth_callback() -> String
+exchange_oauth_code(code: String) -> StoredAuth
+refresh_auth_token() -> StoredAuth
+logout()
+```
+
+### Download Management
+```rust
+download_youtube(url: String, output_dir: String) -> Result<String>
+create_download_dir() -> Result<String>
+```
+
+### Floating Panel
+```rust
+toggle_floating_window(app: AppHandle) -> Result<()>
+is_floating_window_open() -> bool
+```
 
 ## Development Workflows
 
-### Modifying License Logic
+### Modifying Floating Panel UI
 
-1. Edit `src/utils/license_manager.py`
-2. Update API endpoint or validation logic
-3. Test: `python test_desktop_license.py`
-4. Verify in UI: `python main.py`
+1. Edit HTML/CSS/JS in `toggle_floating_window()` function (lib.rs ~1230)
+2. Rebuild: `npm run build`
+3. Run and test
 
-### Adding Download Source
+### Adding New Tauri Command
 
-1. Create downloader in `src/downloaders/new_downloader.py`
-2. Implement `DownloadTask` interface
-3. Register in `download_manager.py`
-4. Add UI controls in `main_window_qt.py`
+1. Add function in `lib.rs`:
+```rust
+#[tauri::command]
+async fn my_command(arg: String) -> Result<String, String> {
+    Ok(format!("Result: {}", arg))
+}
+```
 
-### Updating UI
+2. Register in `run()`:
+```rust
+.invoke_handler(tauri::generate_handler![
+    // ... existing commands
+    my_command
+])
+```
 
-1. Edit Qt component in `src/gui/`
-2. Use Qt Designer for complex layouts (optional)
-3. Apply dark theme stylesheet
-4. Test: `python main.py`
+3. Call from React:
+```typescript
+const result = await invoke<string>('my_command', { arg: 'value' });
+```
+
+### Debugging
+
+Run app from terminal to see Rust println! output:
+```bash
+./packages/desktop/src-tauri/target/release/bundle/macos/Hasod\ Downloads.app/Contents/MacOS/hasod-downloads
+```
+
+Key log prefixes:
+- `[OAuth]` - Authentication flow
+- `[FloatingPanel]` - Panel creation/destruction
+- `[MessageHandler]` - URL drops received
+- `[DragHandler]` - Window dragging
+- `[yt-dlp]` - Download progress
+
+## Dependencies
+
+### Rust (Cargo.toml)
+- `tauri` - Desktop framework
+- `objc` / `cocoa` - Native macOS APIs
+- `security-framework` - Keychain access
+- `reqwest` - HTTP client
+- `serde` / `serde_json` - Serialization
+- `tiny_http` - OAuth callback server
+- `keyring` - Cross-platform keychain
+- `base64` / `sha2` - PKCE crypto
+
+### Sidecars (bundled executables)
+- `yt-dlp` - YouTube downloads
+- `ffmpeg` - Audio conversion
+
+## Common Issues
+
+### "env var not found: HASOD_*"
+```bash
+cd packages/desktop/src-tauri
+cp cargo-config.toml.example .cargo/config.toml
+# Edit with actual values
+```
+
+### Panel doesn't appear over fullscreen
+- Verify `setLevel: 25i64` is called AFTER `orderFrontRegardless`
+- Check collection behavior is 257
+
+### Dragging doesn't work
+- Verify `create_drag_handler_class()` is registered
+- Check JS mousedown/mousemove handlers in panel HTML
+
+### OAuth fails
+- Verify port 8420 is available
+- Check redirect_uri matches Google Console config
+- Ensure PKCE code_verifier is stored before exchange
 
 ## API Integration
 
-### Hasod Cloud Functions
+**Endpoint:** `https://us-central1-hasod-41a23.cloudfunctions.net/api/user/subscription-status`
 
-**Check Subscription:**
-```python
-import requests
+**Required service:** `hasod-downloader`
 
-response = requests.get(
-    'https://us-central1-hasod-41a23.cloudfunctions.net/api/user/subscription-status',
-    headers={'Authorization': f'Bearer {token}'},
-    params={'email': user_email}
-)
-
-data = response.json()
-services = data.get('services', {})
-downloader = services.get('hasod-downloader', {})
-is_active = downloader.get('status') == 'active'
+```rust
+// Check subscription status
+let response = client
+    .get(&format!("{}/user/subscription-status", API_BASE_URL))
+    .query(&[("email", &email)])
+    .send()
+    .await?;
 ```
 
-**Response Format:**
+## Build & Distribution
+
+### macOS
+```bash
+cd packages/desktop
+npm run build
+# Output: src-tauri/target/release/bundle/macos/Hasod Downloads.app
+# Output: src-tauri/target/release/bundle/dmg/Hasod Downloads_0.1.0_aarch64.dmg
+```
+
+### Code Signing (when ready)
+Add to `tauri.conf.json`:
 ```json
 {
-  "email": "user@example.com",
-  "services": {
-    "hasod-downloader": {
-      "status": "active",
-      "paymentMethod": "paypal",
-      "startDate": "2025-01-01",
-      "nextBillingDate": "2025-02-01"
+  "bundle": {
+    "macOS": {
+      "signingIdentity": "Developer ID Application: Your Name"
     }
   }
 }
 ```
 
-### Registration URL
+## File Responsibilities
 
-Opens: `https://hasod-41a23.web.app/subscriptions?device_uuid={uuid}`
-
-## Building & Distribution
-
-### macOS
-
-```bash
-# Build app bundle
-./build.sh
-# Output: dist/Hasod Downloads.app
-
-# Create DMG installer
-./build_dmg.sh
-# Output: dist/Hasod Downloads.dmg
-```
-
-**Requirements:**
-- Xcode Command Line Tools
-- PyInstaller
-- create-dmg (for DMG)
-
-### Windows
-
-```bash
-# Build executable
-python build.bat
-# Output: dist/Hasod Downloads.exe
-
-# Create installer
-./build_installer.sh
-# Output: dist/Hasod Downloads Setup.exe
-```
-
-**Requirements:**
-- Python 3.9+
-- PyInstaller
-- NSIS (for installer)
-
-### PyInstaller Spec
-
-`build_pyinstaller.spec` contains:
-- Entry point: `main.py`
-- Hidden imports
-- Data files (icons, assets)
-- Binary exclusions
-
-## Dependencies
-
-**Main Packages:**
-- `PySide6` - Qt6 GUI framework
-- `requests` - HTTP client
-- `spotdl` - Spotify downloader
-- `yt-dlp` - YouTube downloader
-- `google-auth` - Google OAuth
-
-**See:** `requirements.txt` for full list
-
-## Configuration
-
-**Storage:** `~/.hasod_downloads/`
-- `device_uuid.json` - Unique device ID
-- `auth_token.json` - Auth token from webapp
-- `google_credentials.json` - OAuth credentials
-
-**Environment Variables:**
-- `HASOD_API_URL` - API base URL (default: production)
-- `HASOD_DEV_MODE` - Enable dev mode (default: false)
-
-## Common Issues
-
-### "No subscription found"
-- Verify logged in with correct Google account
-- Check subscription at https://hasod-41a23.web.app
-- Ensure `hasod-downloader` service is active
-- Click "Refresh" in License tab
-
-### "PyQt/PySide not found"
-```bash
-pip install --upgrade PySide6
-```
-
-### "ffmpeg not found"
-- macOS: `brew install ffmpeg`
-- Windows: Download from ffmpeg.org
-
-### "Build fails on macOS"
-```bash
-xcode-select --install
-pip install --upgrade pyinstaller
-```
-
-## Testing
-
-```bash
-# Run app
-python main.py
-
-# Test license validation
-python test_desktop_license.py
-
-# Test downloads (if licensed)
-# 1. Launch app
-# 2. Go to License tab, login
-# 3. Paste YouTube/Spotify URL
-# 4. Click Download
-```
-
-## Comparison with DJ Downloader
-
-| Aspect | DJ Downloader | Hasod Downloads |
-|--------|--------------|-----------------|
-| License API | Cloud Run | Firebase Functions |
-| Service Name | DJ Downloader | מוריד הסוד |
-| Backend | Flask | Firebase |
-| Features | ✅ All | ✅ All (same) |
-
-**All download functionality preserved from DJ Downloader!**
-
-## Shared Package Integration
-
-Desktop app **reads** from `packages/shared/` but **never modifies** it.
-
-**Usage:**
-```python
-# Read shared types (if needed for API)
-# Types are defined in TypeScript, so Python uses dict/dataclass equivalents
-```
-
-**If shared types needed:**
-→ Ask webapp-backend skill to add them to `packages/shared/`
+| File | Purpose |
+|------|---------|
+| `lib.rs` | All Rust logic: OAuth, license, downloads, floating panel |
+| `App.tsx` | React UI, event listeners, state management |
+| `App.css` | Dark theme styling |
+| `tauri.conf.json` | App config, permissions, bundling |
+| `Cargo.toml` | Rust dependencies |
+| `.cargo/config.toml` | OAuth secrets (gitignored) |
 
 ## Related Documentation
 
+- [packages/desktop/CLAUDE.md](../../../packages/desktop/CLAUDE.md) - Package-level docs
 - [Root CLAUDE.md](../../../CLAUDE.md) - Project overview
-- [Desktop README](../../desktop/README.md) - Setup & usage
-- [API Docs](../../../docs/API.md) - API reference
-- [DJ Downloader Reference](/path/to/dj-downloader) - Original implementation
-
-## Responsibilities
-
-**This skill handles:**
-- ✅ Desktop app development (Python + Qt)
-- ✅ License validation integration
-- ✅ Download functionality (YouTube, Spotify, SoundCloud)
-- ✅ Building installers (DMG, NSIS)
-- ✅ Desktop UI/UX
-
-**NOT handled:**
-- ❌ Webapp (packages/webapp/)
-- ❌ Backend functions (packages/functions/)
-- ❌ Shared package modifications (read-only)
-- ❌ Firebase deployment
-
-## Next Steps
-
-1. **Add backend endpoint**: `/user/subscription-status` in Cloud Functions
-2. **Add service**: `hasod-downloader` in Firestore services collection
-3. **Test integration**: End-to-end license validation
-4. **Build installers**: Create DMG and NSIS packages
-5. **Distribute**: Host installers for download
