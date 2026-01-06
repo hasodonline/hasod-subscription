@@ -1,0 +1,670 @@
+/* ============================================================================
+   Floating Button - Enhanced Drop Zone with Queue Status
+   ============================================================================ */
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  width: 100%;
+  height: 100%;
+  background: transparent !important;
+  overflow: hidden;
+}
+
+/* ============================================================================
+   Container
+   ============================================================================ */
+
+.floating-container {
+  width: 90px;
+  height: 90px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  position: relative;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  background: transparent !important;
+  -webkit-app-region: no-drag;
+  transition: width 0.3s ease, height 0.3s ease;
+}
+
+.floating-container.expanded {
+  width: 280px;
+  height: auto;
+  min-height: 200px;
+}
+
+.floating-container:active,
+.floating-container.dragging {
+  cursor: grabbing;
+}
+
+/* ============================================================================
+   Close Button
+   ============================================================================ */
+
+.close-btn {
+  position: absolute;
+  top: 0px;
+  right: 0px;
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: rgba(255, 59, 48, 0.9);
+  color: white;
+  border-radius: 50%;
+  font-size: 14px;
+  font-weight: bold;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: opacity 0.2s, transform 0.2s, background 0.2s;
+  z-index: 100;
+  -webkit-app-region: no-drag;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.floating-container:hover .close-btn {
+  opacity: 1;
+}
+
+.close-btn:hover {
+  transform: scale(1.15);
+  background: rgba(255, 59, 48, 1);
+}
+
+/* ============================================================================
+   Main Circular Button
+   ============================================================================ */
+
+.floating-button {
+  width: 70px;
+  height: 70px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+}
+
+.floating-button:active .button-inner {
+  transform: scale(0.92);
+}
+
+.button-inner {
+  width: 65px;
+  height: 65px;
+  background: var(--service-gradient, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+  border-radius: 50%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow:
+    0 4px 20px rgba(102, 126, 234, 0.5),
+    0 0 40px rgba(118, 75, 162, 0.3),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1), box-shadow 0.3s;
+  z-index: 10;
+  position: relative;
+  overflow: hidden;
+}
+
+.floating-container:hover .button-inner {
+  transform: scale(1.08);
+  box-shadow:
+    0 6px 25px rgba(102, 126, 234, 0.6),
+    0 0 50px rgba(118, 75, 162, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.2);
+}
+
+/* ============================================================================
+   State: Drag Over - Green highlight
+   ============================================================================ */
+
+.floating-container.drag-over .button-inner {
+  transform: scale(1.2);
+  background: linear-gradient(135deg, #00c853 0%, #00e676 100%);
+  box-shadow:
+    0 6px 35px rgba(0, 200, 83, 0.7),
+    0 0 70px rgba(0, 230, 118, 0.6),
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
+  animation: bounce 0.5s ease infinite;
+}
+
+@keyframes bounce {
+  0%, 100% { transform: scale(1.2) translateY(0); }
+  50% { transform: scale(1.2) translateY(-3px); }
+}
+
+/* ============================================================================
+   State: Downloading - Service-colored with progress
+   ============================================================================ */
+
+.floating-container.downloading .button-inner {
+  box-shadow:
+    0 4px 25px rgba(102, 126, 234, 0.6),
+    0 0 50px rgba(118, 75, 162, 0.4);
+}
+
+/* Progress Ring */
+.progress-ring {
+  position: absolute;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.progress-ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.2);
+  stroke-width: 6;
+}
+
+.progress-ring-fill {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.9);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-dasharray: 264;
+  transition: stroke-dashoffset 0.3s ease;
+}
+
+.service-icon {
+  font-size: 22px;
+  margin-bottom: -2px;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.3));
+}
+
+.progress-text {
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Rounded', sans-serif;
+}
+
+/* ============================================================================
+   State: Queued - Show count
+   ============================================================================ */
+
+.floating-container.queued .button-inner {
+  background: linear-gradient(135deg, #ff9800 0%, #f57c00 100%);
+  box-shadow:
+    0 4px 20px rgba(255, 152, 0, 0.5),
+    0 0 40px rgba(245, 124, 0, 0.3);
+}
+
+.queue-count {
+  font-size: 24px;
+  font-weight: 800;
+  color: white;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+  line-height: 1;
+}
+
+.queue-label {
+  font-size: 9px;
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.9);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ============================================================================
+   State: Success Flash
+   ============================================================================ */
+
+.floating-button.success-flash .button-inner {
+  animation: successFlash 0.6s ease;
+}
+
+@keyframes successFlash {
+  0% { transform: scale(1); }
+  20% { transform: scale(1.2); background: linear-gradient(135deg, #4CAF50 0%, #45a049 100%); }
+  100% { transform: scale(1); }
+}
+
+.success-icon {
+  font-size: 32px;
+  color: white;
+  animation: checkPop 0.5s ease;
+}
+
+@keyframes checkPop {
+  0% { transform: scale(0); opacity: 0; }
+  50% { transform: scale(1.3); }
+  100% { transform: scale(1); opacity: 1; }
+}
+
+/* ============================================================================
+   Download Icon
+   ============================================================================ */
+
+.download-icon {
+  width: 32px;
+  height: 32px;
+  color: white;
+  filter: drop-shadow(0 1px 2px rgba(0, 0, 0, 0.2));
+  animation: float 3s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-3px); }
+}
+
+/* ============================================================================
+   Pulse Animation Rings
+   ============================================================================ */
+
+.pulse-ring {
+  position: absolute;
+  width: 65px;
+  height: 65px;
+  border: 2px solid rgba(102, 126, 234, 0.6);
+  border-radius: 50%;
+  animation: pulse 2.5s ease-out infinite;
+  pointer-events: none;
+}
+
+.pulse-ring.delay {
+  animation-delay: 0.8s;
+}
+
+.pulse-ring.fast {
+  animation: pulse 1.2s ease-out infinite;
+  border-color: rgba(255, 255, 255, 0.4);
+}
+
+/* Drag over pulse */
+.floating-container.drag-over .pulse-ring {
+  border-color: rgba(0, 200, 83, 0.8);
+  animation: pulse-fast 0.5s ease-out infinite;
+}
+
+/* Downloading pulse */
+.floating-container.downloading .pulse-ring {
+  border-color: rgba(255, 255, 255, 0.4);
+  animation: pulse 1.5s ease-out infinite;
+}
+
+/* Queued pulse */
+.floating-container.queued .pulse-ring {
+  border-color: rgba(255, 152, 0, 0.5);
+}
+
+@keyframes pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+@keyframes pulse-fast {
+  0% {
+    transform: scale(1);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(2);
+    opacity: 0;
+  }
+}
+
+/* ============================================================================
+   Tooltip
+   ============================================================================ */
+
+.tooltip {
+  position: absolute;
+  bottom: -30px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(0, 0, 0, 0.9);
+  color: white;
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-size: 11px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  white-space: nowrap;
+  max-width: 200px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  animation: fadeSlideIn 0.2s ease-out;
+  pointer-events: none;
+  z-index: 50;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  backdrop-filter: blur(10px);
+}
+
+.tooltip-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.tooltip-icon {
+  font-size: 14px;
+}
+
+.tooltip-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+@keyframes fadeSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* ============================================================================
+   Queue Panel (Expanded View)
+   ============================================================================ */
+
+.queue-panel {
+  position: absolute;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 260px;
+  background: rgba(20, 20, 30, 0.95);
+  border-radius: 16px;
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  overflow: hidden;
+  animation: panelSlideIn 0.3s ease;
+  -webkit-app-region: no-drag;
+}
+
+@keyframes panelSlideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(-10px) scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
+}
+
+.panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
+  font-size: 13px;
+  font-weight: 600;
+  color: white;
+}
+
+.panel-close {
+  width: 20px;
+  height: 20px;
+  border: none;
+  background: rgba(255, 255, 255, 0.1);
+  color: rgba(255, 255, 255, 0.7);
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.2s, color 0.2s;
+}
+
+.panel-close:hover {
+  background: rgba(255, 59, 48, 0.8);
+  color: white;
+}
+
+.panel-content {
+  padding: 12px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+/* Empty Queue */
+.empty-queue {
+  text-align: center;
+  padding: 20px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.empty-icon {
+  font-size: 32px;
+  margin-bottom: 8px;
+  opacity: 0.5;
+}
+
+.empty-text {
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Queue List */
+.queue-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.queue-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 10px;
+  transition: background 0.2s;
+}
+
+.queue-item:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.queue-item.downloading {
+  background: rgba(102, 126, 234, 0.2);
+  border: 1px solid rgba(102, 126, 234, 0.3);
+}
+
+.queue-item.complete {
+  opacity: 0.6;
+}
+
+.queue-item.error {
+  background: rgba(255, 59, 48, 0.15);
+  border: 1px solid rgba(255, 59, 48, 0.3);
+}
+
+.item-icon {
+  font-size: 18px;
+  flex-shrink: 0;
+}
+
+.item-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.item-title {
+  font-size: 12px;
+  font-weight: 500;
+  color: white;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.item-status {
+  margin-top: 4px;
+}
+
+/* Mini Progress Bar */
+.mini-progress {
+  height: 4px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.mini-progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #667eea 0%, #764ba2 100%);
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+
+/* Status Labels */
+.status-converting {
+  font-size: 10px;
+  color: #ff9800;
+  font-weight: 500;
+}
+
+.status-complete {
+  font-size: 10px;
+  color: #4CAF50;
+  font-weight: 500;
+}
+
+.status-queued {
+  font-size: 10px;
+  color: rgba(255, 255, 255, 0.5);
+}
+
+.status-error {
+  font-size: 10px;
+  color: #ff5252;
+  font-weight: 500;
+}
+
+.queue-more {
+  text-align: center;
+  font-size: 11px;
+  color: rgba(255, 255, 255, 0.5);
+  padding: 8px;
+}
+
+/* Clear Button */
+.clear-btn {
+  width: 100%;
+  padding: 10px;
+  border: none;
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.clear-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: white;
+}
+
+/* ============================================================================
+   Supported Services Indicator
+   ============================================================================ */
+
+.supported-services {
+  position: absolute;
+  bottom: -22px;
+  left: 50%;
+  transform: translateX(-50%);
+  display: flex;
+  gap: 4px;
+  font-size: 10px;
+  opacity: 0;
+  transition: opacity 0.3s;
+}
+
+.floating-container:hover .supported-services {
+  opacity: 0.6;
+}
+
+.supported-services span {
+  filter: grayscale(0.5);
+  transition: filter 0.2s;
+}
+
+.supported-services span:hover {
+  filter: grayscale(0);
+}
+
+/* ============================================================================
+   Scrollbar Styling
+   ============================================================================ */
+
+.panel-content::-webkit-scrollbar {
+  width: 6px;
+}
+
+.panel-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.panel-content::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.2);
+  border-radius: 3px;
+}
+
+.panel-content::-webkit-scrollbar-thumb:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+/* ============================================================================
+   Glow Effects
+   ============================================================================ */
+
+.floating-container.downloading::before {
+  content: '';
+  position: absolute;
+  width: 100px;
+  height: 100px;
+  background: radial-gradient(circle, rgba(102, 126, 234, 0.3) 0%, transparent 70%);
+  border-radius: 50%;
+  animation: glowPulse 2s ease-in-out infinite;
+  pointer-events: none;
+  z-index: 0;
+}
+
+.floating-container.drag-over::before {
+  background: radial-gradient(circle, rgba(0, 200, 83, 0.4) 0%, transparent 70%);
+}
+
+@keyframes glowPulse {
+  0%, 100% { transform: scale(1); opacity: 0.5; }
+  50% { transform: scale(1.2); opacity: 0.8; }
+}
+
+/* ============================================================================
+   Hidden Elements
+   ============================================================================ */
+
+.drop-hint {
+  display: none;
+}
