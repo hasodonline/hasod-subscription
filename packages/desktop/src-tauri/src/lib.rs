@@ -352,9 +352,14 @@ const REQUIRED_SERVICE_ID: &str = "hasod-downloader";
 
 // OAuth credentials loaded from environment variables at compile time
 // Set these in .cargo/config.toml or as environment variables before building
+//
+// For desktop apps with PKCE:
+// - Create a "Desktop" OAuth client in Google Cloud Console
+// - GOOGLE_OAUTH_CLIENT_ID is required
+// - GOOGLE_OAUTH_CLIENT_SECRET is NOT needed for pure PKCE flow
+// - FIREBASE_API_KEY is public (same as in webapp)
 const FIREBASE_API_KEY: &str = env!("HASOD_FIREBASE_API_KEY");
 const GOOGLE_OAUTH_CLIENT_ID: &str = env!("HASOD_GOOGLE_OAUTH_CLIENT_ID");
-const GOOGLE_OAUTH_CLIENT_SECRET: &str = env!("HASOD_GOOGLE_OAUTH_CLIENT_SECRET");
 const OAUTH_CALLBACK_PORT: u16 = 8420;
 const KEYCHAIN_SERVICE: &str = "hasod-downloads";
 
@@ -2451,14 +2456,13 @@ async fn exchange_oauth_code(code: String) -> Result<StoredAuth, String> {
 
     let redirect_uri = format!("http://localhost:{}/callback", OAUTH_CALLBACK_PORT);
 
-    // Exchange code for tokens with Google (desktop apps require client_secret)
+    // Exchange code for tokens with Google using PKCE (no client_secret needed)
     let client = reqwest::Client::new();
     let token_response = client
         .post("https://oauth2.googleapis.com/token")
         .form(&[
             ("code", code.as_str()),
             ("client_id", GOOGLE_OAUTH_CLIENT_ID),
-            ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
             ("redirect_uri", redirect_uri.as_str()),
             ("grant_type", "authorization_code"),
             ("code_verifier", code_verifier.as_str()),
