@@ -69,17 +69,9 @@ jobs:
           PAYPAL_CLIENT_ID: "${{ secrets.PAYPAL_CLIENT_ID }}"
           PAYPAL_CLIENT_SECRET: "${{ secrets.PAYPAL_CLIENT_SECRET }}"
           PAYPAL_SANDBOX: "false"
-          SPOTIFY_CLIENT_ID: "${{ secrets.SPOTIFY_CLIENT_ID }}"
-          SPOTIFY_CLIENT_SECRET: "${{ secrets.SPOTIFY_CLIENT_SECRET }}"
-          OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}"
           GOOGLE_SERVICE_ACCOUNT_KEY: '${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}'
           GOOGLE_ADMIN_EMAIL: "hasod@hasodonline.com"
-          PROXY_ENABLED: "${{ secrets.PROXY_ENABLED }}"
-          PROXY_HOST: "${{ secrets.PROXY_HOST }}"
-          PROXY_PORT_MIN: "${{ secrets.PROXY_PORT_MIN }}"
-          PROXY_PORT_MAX: "${{ secrets.PROXY_PORT_MAX }}"
-          PROXY_USERNAME: "${{ secrets.PROXY_USERNAME }}"
-          PROXY_PASSWORD: "${{ secrets.PROXY_PASSWORD }}"
+          OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}"
           EOF
 
       # ============================================

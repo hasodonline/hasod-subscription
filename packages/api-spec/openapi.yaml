@@ -4,7 +4,7 @@ info:
   version: 1.0.0
   description: |
     Subscription management API for Hasod services.
-    Handles service catalog, PayPal subscriptions, manual payments, and download jobs.
+    Handles service catalog, PayPal subscriptions, and manual payments.
   contact:
     email: hasod@hasodonline.com
   license:
@@ -26,8 +26,8 @@ tags:
     description: User subscription status
   - name: Admin
     description: Administrative operations (requires admin email)
-  - name: Downloads
-    description: Download service operations
+  - name: Transliteration
+    description: Hebrew to English transliteration service
 
 # Default: no security (public endpoints explicitly set security: [])
 security: []
@@ -371,124 +371,42 @@ paths:
           $ref: '#/components/responses/Forbidden'
 
   # ===========================================================================
-  # Downloads
+  # Transliteration
   # ===========================================================================
-  /download/submit:
+  /transliterate:
     post:
-      operationId: submitDownload
-      summary: Submit a download job
-      description: Creates a new download job for YouTube, Spotify, SoundCloud, or Bandcamp.
-      tags: [Downloads]
+      operationId: transliterateMedia
+      summary: Transliterate Hebrew media names to English
+      description: |
+        Transliterates song, artist, and album names from Hebrew to English.
+        Uses OpenAI for intelligent transliteration that preserves meaning.
+        Requires user authentication.
+      tags: [Transliteration]
+      security:
+        - bearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/SubmitDownloadRequest'
+              $ref: '#/components/schemas/TransliterateRequest'
       responses:
         '200':
-          description: Download job created
+          description: Transliteration successful
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubmitDownloadResponse'
+                $ref: '#/components/schemas/TransliterateResponse'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '403':
           description: Subscription required
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/SubscriptionRequiredError'
-
-  /download/status/{jobId}:
-    get:
-      operationId: getDownloadStatus
-      summary: Get download job status
-      tags: [Downloads]
-      parameters:
-        - name: jobId
-          in: path
-          required: true
-          schema:
-            type: string
-        - name: uid
-          in: query
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Job status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DownloadJobResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  /download/history:
-    get:
-      operationId: getDownloadHistory
-      summary: Get user's download history
-      tags: [Downloads]
-      parameters:
-        - name: uid
-          in: query
-          required: true
-          schema:
-            type: string
-        - name: limit
-          in: query
-          schema:
-            type: integer
-            default: 30
-            minimum: 1
-            maximum: 100
-      responses:
-        '200':
-          description: Download history
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DownloadHistoryResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-
-  /download/{jobId}:
-    delete:
-      operationId: deleteDownloadJob
-      summary: Delete a download job
-      tags: [Downloads]
-      parameters:
-        - name: jobId
-          in: path
-          required: true
-          schema:
-            type: string
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              type: object
-              required: [uid]
-              properties:
-                uid:
-                  type: string
-      responses:
-        '200':
-          description: Job deleted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
+                $ref: '#/components/schemas/ErrorResponse'
 
 components:
   # ===========================================================================
@@ -1006,150 +924,51 @@ components:
             type: string
 
     # -------------------------------------------------------------------------
-    # Download Schemas
+    # Transliteration Schemas
     # -------------------------------------------------------------------------
-    Platform:
-      type: string
-      enum: [youtube, spotify, soundcloud, bandcamp, unknown]
-
-    DownloadType:
-      type: string
-      enum: [single, album, playlist]
-
-    JobStatus:
-      type: string
-      enum: [queued, downloading, processing, complete, error]
-
-    DownloadMetadata:
+    MediaItem:
       type: object
       properties:
         title:
           type: string
+          description: Song/track title
         artist:
           type: string
+          description: Artist name
         album:
           type: string
-        trackCount:
-          type: integer
+          description: Album name
 
-    DownloadFile:
+    TransliterateRequest:
       type: object
-      required: [name, path, size]
+      required: [items]
       properties:
-        name:
-          type: string
-        path:
-          type: string
-        size:
-          type: integer
-          description: File size in bytes
-
-    DownloadJob:
-      type: object
-      required:
-        - jobId
-        - uid
-        - url
-        - platform
-        - type
-        - status
-        - progress
-        - message
-        - metadata
-        - files
-        - transliterateEnabled
-        - createdAt
-      properties:
-        jobId:
-          type: string
-        uid:
-          type: string
-        url:
-          type: string
-          format: uri
-        platform:
-          $ref: '#/components/schemas/Platform'
-        type:
-          $ref: '#/components/schemas/DownloadType'
-        status:
-          $ref: '#/components/schemas/JobStatus'
-        progress:
-          type: integer
-          minimum: 0
-          maximum: 100
-        message:
-          type: string
-        metadata:
-          $ref: '#/components/schemas/DownloadMetadata'
-        files:
+        items:
           type: array
           items:
-            $ref: '#/components/schemas/DownloadFile'
-        downloadUrl:
-          type: string
-          format: uri
-        expiresAt:
-          type: string
-          format: date-time
-        transliterateEnabled:
-          type: boolean
-        createdAt:
-          type: string
-          format: date-time
-        completedAt:
-          type: string
-          format: date-time
-        error:
-          type: string
+            $ref: '#/components/schemas/MediaItem'
+          minItems: 1
+          maxItems: 50
+          description: Array of media items to transliterate (max 50)
 
-    SubmitDownloadRequest:
+    TransliteratedItem:
       type: object
-      required: [uid, url]
       properties:
-        uid:
-          type: string
-        url:
-          type: string
-          format: uri
-        transliterate:
-          type: boolean
-          default: false
+        original:
+          $ref: '#/components/schemas/MediaItem'
+        transliterated:
+          $ref: '#/components/schemas/MediaItem'
 
-    SubmitDownloadResponse:
+    TransliterateResponse:
       type: object
-      required: [success, jobId, message]
+      required: [success, items]
       properties:
         success:
           type: boolean
-        jobId:
-          type: string
-        estimatedTracks:
-          type: integer
-        message:
-          type: string
-
-    SubscriptionRequiredError:
-      type: object
-      required: [error, requiresSubscription]
-      properties:
-        error:
-          type: string
-        requiresSubscription:
-          type: boolean
-          const: true
-
-    DownloadJobResponse:
-      type: object
-      required: [job]
-      properties:
-        job:
-          $ref: '#/components/schemas/DownloadJob'
-
-    DownloadHistoryResponse:
-      type: object
-      required: [jobs]
-      properties:
-        jobs:
+        items:
           type: array
           items:
-            $ref: '#/components/schemas/DownloadJob'
+            $ref: '#/components/schemas/TransliteratedItem'
+        tokensUsed:
+          type: integer
+          description: Number of OpenAI tokens used

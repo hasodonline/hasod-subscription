@@ -147,9 +147,10 @@ jobs:
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          # Required for OAuth (public values, same as webapp)
+          # Required for OAuth
           HASOD_FIREBASE_API_KEY: ${{ secrets.HASOD_FIREBASE_API_KEY }}
           HASOD_GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.HASOD_GOOGLE_OAUTH_CLIENT_ID }}
+          HASOD_GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.HASOD_GOOGLE_OAUTH_CLIENT_SECRET }}
         with:
           projectPath: packages/desktop
           args: --target ${{ matrix.target }}

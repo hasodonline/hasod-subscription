@@ -356,10 +356,11 @@ const REQUIRED_SERVICE_ID: &str = "hasod-downloader";
 // For desktop apps with PKCE:
 // - Create a "Desktop" OAuth client in Google Cloud Console
 // - GOOGLE_OAUTH_CLIENT_ID is required
-// - GOOGLE_OAUTH_CLIENT_SECRET is NOT needed for pure PKCE flow
+// - GOOGLE_OAUTH_CLIENT_SECRET is still needed even for Desktop app type in Google Cloud
 // - FIREBASE_API_KEY is public (same as in webapp)
 const FIREBASE_API_KEY: &str = env!("HASOD_FIREBASE_API_KEY");
 const GOOGLE_OAUTH_CLIENT_ID: &str = env!("HASOD_GOOGLE_OAUTH_CLIENT_ID");
+const GOOGLE_OAUTH_CLIENT_SECRET: &str = env!("HASOD_GOOGLE_OAUTH_CLIENT_SECRET");
 const OAUTH_CALLBACK_PORT: u16 = 8420;
 const KEYCHAIN_SERVICE: &str = "hasod-downloads";
 
@@ -2457,12 +2458,18 @@ async fn exchange_oauth_code(code: String) -> Result<StoredAuth, String> {
     let redirect_uri = format!("http://localhost:{}/callback", OAUTH_CALLBACK_PORT);
 
     // Exchange code for tokens with Google using PKCE (no client_secret needed)
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    println!("[OAuth] Sending token exchange request to Google...");
     let token_response = client
         .post("https://oauth2.googleapis.com/token")
         .form(&[
             ("code", code.as_str()),
             ("client_id", GOOGLE_OAUTH_CLIENT_ID),
+            ("client_secret", GOOGLE_OAUTH_CLIENT_SECRET),
             ("redirect_uri", redirect_uri.as_str()),
             ("grant_type", "authorization_code"),
             ("code_verifier", code_verifier.as_str()),
@@ -2471,8 +2478,11 @@ async fn exchange_oauth_code(code: String) -> Result<StoredAuth, String> {
         .await
         .map_err(|e| format!("Token exchange request failed: {}", e))?;
 
+    println!("[OAuth] Got response with status: {}", token_response.status());
+
     if !token_response.status().is_success() {
         let error_text = token_response.text().await.unwrap_or_default();
+        println!("[OAuth] Token exchange error: {}", error_text);
         return Err(format!("Token exchange failed: {}", error_text));
     }
 

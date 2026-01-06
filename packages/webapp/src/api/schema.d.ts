@@ -295,7 +295,7 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/download/submit": {
+    "/transliterate": {
         parameters: {
             query?: never;
             header?: never;
@@ -305,62 +305,13 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Submit a download job
-         * @description Creates a new download job for YouTube, Spotify, SoundCloud, or Bandcamp.
+         * Transliterate Hebrew media names to English
+         * @description Transliterates song, artist, and album names from Hebrew to English.
+         *     Uses OpenAI for intelligent transliteration that preserves meaning.
+         *     Requires user authentication.
          */
-        post: operations["submitDownload"];
+        post: operations["transliterateMedia"];
         delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/download/status/{jobId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get download job status */
-        get: operations["getDownloadStatus"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/download/history": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get user's download history */
-        get: operations["getDownloadHistory"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/download/{jobId}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        post?: never;
-        /** Delete a download job */
-        delete: operations["deleteDownloadJob"];
         options?: never;
         head?: never;
         patch?: never;
@@ -582,70 +533,27 @@ export interface components {
             message: string;
             services: string[];
         };
-        /** @enum {string} */
-        Platform: "youtube" | "spotify" | "soundcloud" | "bandcamp" | "unknown";
-        /** @enum {string} */
-        DownloadType: "single" | "album" | "playlist";
-        /** @enum {string} */
-        JobStatus: "queued" | "downloading" | "processing" | "complete" | "error";
-        DownloadMetadata: {
+        MediaItem: {
+            /** @description Song/track title */
             title?: string;
+            /** @description Artist name */
             artist?: string;
+            /** @description Album name */
             album?: string;
-            trackCount?: number;
         };
-        DownloadFile: {
-            name: string;
-            path: string;
-            /** @description File size in bytes */
-            size: number;
+        TransliterateRequest: {
+            /** @description Array of media items to transliterate (max 50) */
+            items: components["schemas"]["MediaItem"][];
         };
-        DownloadJob: {
-            jobId: string;
-            uid: string;
-            /** Format: uri */
-            url: string;
-            platform: components["schemas"]["Platform"];
-            type: components["schemas"]["DownloadType"];
-            status: components["schemas"]["JobStatus"];
-            progress: number;
-            message: string;
-            metadata: components["schemas"]["DownloadMetadata"];
-            files: components["schemas"]["DownloadFile"][];
-            /** Format: uri */
-            downloadUrl?: string;
-            /** Format: date-time */
-            expiresAt?: string;
-            transliterateEnabled: boolean;
-            /** Format: date-time */
-            createdAt: string;
-            /** Format: date-time */
-            completedAt?: string;
-            error?: string;
+        TransliteratedItem: {
+            original?: components["schemas"]["MediaItem"];
+            transliterated?: components["schemas"]["MediaItem"];
         };
-        SubmitDownloadRequest: {
-            uid: string;
-            /** Format: uri */
-            url: string;
-            /** @default false */
-            transliterate: boolean;
-        };
-        SubmitDownloadResponse: {
+        TransliterateResponse: {
             success: boolean;
-            jobId: string;
-            estimatedTracks?: number;
-            message: string;
-        };
-        SubscriptionRequiredError: {
-            error: string;
-            /** @constant */
-            requiresSubscription: true;
-        };
-        DownloadJobResponse: {
-            job: components["schemas"]["DownloadJob"];
-        };
-        DownloadHistoryResponse: {
-            jobs: components["schemas"]["DownloadJob"][];
+            items: components["schemas"]["TransliteratedItem"][];
+            /** @description Number of OpenAI tokens used */
+            tokensUsed?: number;
         };
     };
     responses: {
@@ -1061,7 +969,7 @@ export interface operations {
             403: components["responses"]["Forbidden"];
         };
     };
-    submitDownload: {
+    transliterateMedia: {
         parameters: {
             query?: never;
             header?: never;
@@ -1070,109 +978,30 @@ export interface operations {
         };
         requestBody: {
             content: {
-                "application/json": components["schemas"]["SubmitDownloadRequest"];
+                "application/json": components["schemas"]["TransliterateRequest"];
             };
         };
         responses: {
-            /** @description Download job created */
+            /** @description Transliteration successful */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubmitDownloadResponse"];
+                    "application/json": components["schemas"]["TransliterateResponse"];
                 };
             };
             400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
             /** @description Subscription required */
             403: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["SubscriptionRequiredError"];
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
-        };
-    };
-    getDownloadStatus: {
-        parameters: {
-            query: {
-                uid: string;
-            };
-            header?: never;
-            path: {
-                jobId: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Job status */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DownloadJobResponse"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-            403: components["responses"]["Forbidden"];
-            404: components["responses"]["NotFound"];
-        };
-    };
-    getDownloadHistory: {
-        parameters: {
-            query: {
-                uid: string;
-                limit?: number;
-            };
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Download history */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DownloadHistoryResponse"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
-        };
-    };
-    deleteDownloadJob: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                jobId: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": {
-                    uid: string;
-                };
-            };
-        };
-        responses: {
-            /** @description Job deleted */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["SuccessResponse"];
-                };
-            };
-            400: components["responses"]["BadRequest"];
         };
     };
 }

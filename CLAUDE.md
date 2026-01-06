@@ -115,12 +115,11 @@ npm run build                  # Build production app
 - Express.js REST API
 - PayPal subscription integration
 - Google Workspace integration
-- Download service (YouTube, Spotify)
 
 ### Desktop App (packages/desktop/)
 - **Tauri 2** (Rust + React)
 - License validation via Cloud Functions API
-- Downloads: YouTube, Spotify, SoundCloud
+- Local downloads via yt-dlp (YouTube, Spotify, SoundCloud)
 - Requires active `hasod-downloader` subscription
 
 ### Shared Package (packages/shared/)
@@ -129,7 +128,7 @@ npm run build                  # Build production app
 - Common utilities
 - **Note:** Prefer OpenAPI-generated types for new code
 
-## API Endpoints (18 total)
+## API Endpoints (14 total)
 
 Defined in `packages/api-spec/openapi.yaml`:
 
@@ -139,7 +138,6 @@ Defined in `packages/api-spec/openapi.yaml`:
 | Subscriptions | POST /create-subscription, POST /activate-subscription, POST /paypal-webhook |
 | User | GET /user/subscription-status |
 | Admin | POST /admin/services, DELETE /admin/services/:serviceId, POST /admin/manual-payment, GET /admin/manual-transactions, GET /admin/manual-transactions/:userId, POST /admin/cancel-subscription, POST /admin/manage-group, POST /admin/migrate-users, POST /admin/seed-services |
-| Downloads | POST /download/submit, GET /download/status/:jobId, GET /download/history, DELETE /download/:jobId |
 
 ## End-to-End Development Workflow
 

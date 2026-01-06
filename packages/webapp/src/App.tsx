@@ -3,10 +3,10 @@ import { Routes, Route, Link, Navigate } from 'react-router-dom';
 import { auth, onAuthStateChanged, signInWithGoogle, db } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
 import Subscriptions from './pages/Subscriptions';
-import Download from './pages/Download';
 import Admin from './pages/Admin';
 import Developer from './pages/Developer';
 import PayPalReturn from './pages/PayPalReturn';
+import Download from './pages/Download';
 import OnboardingModal from './components/OnboardingModal';
 import ProfileEditModal from './components/ProfileEditModal';
 import UserMenu from './components/UserMenu';
@@ -105,7 +105,7 @@ function App() {
         <h1>הסוד אונליין</h1>
         <nav>
           {user && profileComplete && <Link to="/">מנוי</Link>}
-          {user && profileComplete && <Link to="/download">הורדות</Link>}
+          <Link to="/download">הורדות</Link>
           {isAdmin && <Link to="/admin">ניהול</Link>}
           {isAdmin && <Link to="/developer">מפתח</Link>}
         </nav>
@@ -133,10 +133,6 @@ function App() {
             element={<Navigate to="/" replace />}
           />
           <Route
-            path="/download"
-            element={user && profileComplete ? <Download /> : <Navigate to="/" />}
-          />
-          <Route
             path="/paypal-return"
             element={user ? <PayPalReturn uid={user.uid} /> : <Navigate to="/" />}
           />
@@ -147,6 +143,10 @@ function App() {
           <Route
             path="/developer"
             element={isAdmin ? <Developer /> : <Navigate to="/" />}
+          />
+          <Route
+            path="/download"
+            element={<Download />}
           />
         </Routes>
       </main>

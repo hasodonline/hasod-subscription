@@ -118,17 +118,15 @@ tags:
   - name: Subscriptions
   - name: User
   - name: Admin
-  - name: Downloads
 
 paths:
   /services: ...
   /create-subscription: ...
-  # ... 18 endpoints total
+  # ... 14 endpoints total
 
 components:
   schemas:
     Service: ...
-    DownloadJob: ...
     # ... all request/response types
   securitySchemes:
     bearerAuth:
@@ -136,7 +134,7 @@ components:
       scheme: bearer
 ```
 
-## API Endpoints (18 total)
+## API Endpoints (14 total)
 
 ### Services (Public)
 | Method | Path | Operation |
@@ -169,14 +167,6 @@ components:
 | POST | /admin/migrate-users | migrateUsers |
 | POST | /admin/seed-services | seedServices |
 
-### Downloads
-| Method | Path | Operation |
-|--------|------|-----------|
-| POST | /download/submit | submitDownload |
-| GET | /download/status/{jobId} | getDownloadStatus |
-| GET | /download/history | getDownloadHistory |
-| DELETE | /download/{jobId} | deleteDownloadJob |
-
 ## Generated Output
 
 ### TypeScript (webapp)
@@ -188,7 +178,7 @@ import type { components, paths, operations } from './schema';
 
 // Access schema types
 type Service = components['schemas']['Service'];
-type DownloadJob = components['schemas']['DownloadJob'];
+type ManualTransaction = components['schemas']['ManualTransaction'];
 
 // Access operation types
 type GetServicesResponse = operations['getServices']['responses']['200']['content']['application/json'];

@@ -21,6 +21,7 @@ packages/desktop/dist/
 *.env.yaml
 paypal credentials
 service-account-key.json
+openai key
 
 # Firebase
 .firebase/

@@ -605,19 +605,47 @@ app.post('/admin/seed-services', async (req: Request, res: Response, next: NextF
 });
 
 // ============================================================================
-// Download Service Endpoints
+// Transliteration Endpoint
 // ============================================================================
 
 /**
- * POST /download/submit
- * Submits a new download job
+ * POST /transliterate
+ * Transliterates Hebrew media names to English
+ * Requires user authentication and active hasod-downloader subscription
  */
-app.post('/download/submit', async (req: Request, res: Response, next: NextFunction) => {
+app.post('/transliterate', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const { uid, url, transliterate = false } = req.body;
+    const { items } = req.body;
 
-    if (!uid || !url) {
-      return res.status(400).json({ error: 'Missing required fields: uid, url' });
+    if (!items || !Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: 'Missing required field: items (array)' });
+    }
+
+    if (items.length > 50) {
+      return res.status(400).json({ error: 'Maximum 50 items allowed per request' });
+    }
+
+    // Verify authentication
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({ error: 'Authentication required. Provide Bearer token.' });
+    }
+
+    let userEmail: string | null = null;
+    let uid: string | null = null;
+
+    try {
+      const token = authHeader.substring(7);
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      userEmail = decodedToken.email || null;
+      uid = decodedToken.uid;
+    } catch (authError) {
+      console.error('Token verification failed:', authError);
+      return res.status(401).json({ error: 'Invalid or expired token' });
+    }
+
+    if (!uid || !userEmail) {
+      return res.status(401).json({ error: 'Invalid token: missing user info' });
     }
 
     // Check if user has active subscription to hasod-downloader
@@ -631,99 +659,13 @@ app.post('/download/submit', async (req: Request, res: Response, next: NextFunct
       });
     }
 
-    // Import and use download manager
-    const { getDownloadManagerService } = await import('./services/download-manager.service');
-    const downloadManager = getDownloadManagerService();
+    // Import and use transliteration service
+    const { transliterateMedia } = await import('./services/transliteration.service');
+    const result = await transliterateMedia(items);
 
-    const result = await downloadManager.createJob(uid, url, transliterate);
-
-    res.json({
-      success: true,
-      jobId: result.jobId,
-      estimatedTracks: result.estimatedTracks,
-      message: 'Download job created'
-    });
+    res.json(result);
   } catch (error: any) {
-    console.error('❌ Download submit error:', error);
-    next(error);
-  }
-});
-
-/**
- * GET /download/status/:jobId
- * Gets the status of a download job
- */
-app.get('/download/status/:jobId', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { jobId } = req.params;
-    const { uid } = req.query;
-
-    if (!uid) {
-      return res.status(400).json({ error: 'Missing required parameter: uid' });
-    }
-
-    const { getDownloadManagerService } = await import('./services/download-manager.service');
-    const downloadManager = getDownloadManagerService();
-
-    const job = await downloadManager.getJob(jobId);
-
-    if (!job) {
-      return res.status(404).json({ error: 'Job not found' });
-    }
-
-    if (job.uid !== uid) {
-      return res.status(403).json({ error: 'Unauthorized' });
-    }
-
-    res.json({ job });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * GET /download/history
- * Gets the user's download history
- */
-app.get('/download/history', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { uid, limit = '30' } = req.query;
-
-    if (!uid) {
-      return res.status(400).json({ error: 'Missing required parameter: uid' });
-    }
-
-    const { getDownloadManagerService } = await import('./services/download-manager.service');
-    const downloadManager = getDownloadManagerService();
-
-    const jobs = await downloadManager.getUserJobs(uid as string, parseInt(limit as string));
-
-    res.json({ jobs });
-  } catch (error) {
-    next(error);
-  }
-});
-
-/**
- * DELETE /download/:jobId
- * Deletes a download job and its files
- */
-app.delete('/download/:jobId', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { jobId } = req.params;
-    const { uid } = req.body;
-
-    if (!uid) {
-      return res.status(400).json({ error: 'Missing required field: uid' });
-    }
-
-    const { getDownloadManagerService } = await import('./services/download-manager.service');
-    const downloadManager = getDownloadManagerService();
-
-    await downloadManager.deleteJob(jobId, uid);
-
-    res.json({ success: true, message: 'Job deleted' });
-  } catch (error) {
+    console.error('❌ Transliteration error:', error);
     next(error);
   }
 });
@@ -734,8 +676,8 @@ app.delete('/download/:jobId', async (req: Request, res: Response, next: NextFun
 
 export const api = onRequest(
   {
-    memory: '1GiB', // Increased to handle large downloads and conversions
-    timeoutSeconds: 540, // 9 minutes (max for 2nd Gen Cloud Functions)
+    memory: '512MiB',
+    timeoutSeconds: 300,
     maxInstances: 10,
   },
   app
