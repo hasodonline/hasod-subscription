@@ -10,6 +10,8 @@ import Download from './pages/Download';
 import OnboardingModal from './components/OnboardingModal';
 import ProfileEditModal from './components/ProfileEditModal';
 import UserMenu from './components/UserMenu';
+import LanguageSwitcher from './components/LanguageSwitcher';
+import { LanguageProvider, useLanguage } from './i18n/LanguageContext';
 import { UserProfile, isProfileComplete } from './types/user';
 import './styles.css';
 
@@ -21,11 +23,12 @@ export type AppUser = {
 
 const ADMIN_EMAILS = ['hasod@hasodonline.com', 'yubarkan@gmail.com'];
 
-function App() {
+function AppContent() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
   const [showProfileEditModal, setShowProfileEditModal] = useState(false);
+  const { t, isRTL } = useLanguage();
 
   useEffect(() => {
     console.log('🚀 App component mounted, setting up auth...');
@@ -84,7 +87,7 @@ function App() {
 
   // Show loading state
   if (loading) {
-    return <div className="app loading">טוען...</div>;
+    return <div className="app loading">{t.common.loading}</div>;
   }
 
   // Show onboarding modal for logged in users without complete profile
@@ -93,23 +96,24 @@ function App() {
   // Render login prompt for non-authenticated users
   const renderLoginPrompt = () => (
     <div className="login-prompt">
-      <h2>ברוכים הבאים להסוד אונליין</h2>
-      <p>התחבר כדי לצפות במנויים שלך</p>
-      <button onClick={handleSignIn}>התחבר עם Google</button>
+      <h2>{t.auth.welcome}</h2>
+      <p>{t.auth.loginPrompt}</p>
+      <button onClick={handleSignIn}>{t.header.signIn}</button>
     </div>
   );
 
   return (
-    <div className="app">
+    <div className={`app ${isRTL ? 'rtl' : 'ltr'}`}>
       <header>
-        <h1>הסוד אונליין</h1>
+        <h1>{t.header.title}</h1>
         <nav>
-          {user && profileComplete && <Link to="/">מנוי</Link>}
-          <Link to="/download">הורדות</Link>
-          {isAdmin && <Link to="/admin">ניהול</Link>}
-          {isAdmin && <Link to="/developer">מפתח</Link>}
+          {user && profileComplete && <Link to="/">{t.nav.subscription}</Link>}
+          <Link to="/download">{t.nav.downloads}</Link>
+          {isAdmin && <Link to="/admin">{t.nav.admin}</Link>}
+          {isAdmin && <Link to="/developer">{t.nav.developer}</Link>}
         </nav>
-        <div>
+        <div className="header-actions">
+          <LanguageSwitcher />
           {user ? (
             <UserMenu
               user={user}
@@ -117,7 +121,7 @@ function App() {
               onEditProfile={() => setShowProfileEditModal(true)}
             />
           ) : (
-            <button onClick={handleSignIn}>התחבר עם Google</button>
+            <button onClick={handleSignIn}>{t.header.signIn}</button>
           )}
         </div>
       </header>
@@ -172,6 +176,14 @@ function App() {
         />
       )}
     </div>
+  );
+}
+
+function App() {
+  return (
+    <LanguageProvider>
+      <AppContent />
+    </LanguageProvider>
   );
 }
 

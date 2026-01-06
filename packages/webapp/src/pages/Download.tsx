@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import { useLanguage } from '../i18n/LanguageContext';
 
 interface DownloadInfo {
   name: string;
@@ -23,6 +24,7 @@ export default function Download() {
   const [manifest, setManifest] = useState<ReleaseManifest | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const { t, isRTL } = useLanguage();
 
   useEffect(() => {
     fetch('/desktop-releases.json')
@@ -41,8 +43,8 @@ export default function Download() {
   if (loading) {
     return (
       <div className="download-page">
-        <h2>Hasod Downloads</h2>
-        <p>Loading...</p>
+        <h2>{t.download.title}</h2>
+        <p>{t.common.loading}</p>
       </div>
     );
   }
@@ -50,8 +52,8 @@ export default function Download() {
   if (error || !manifest) {
     return (
       <div className="download-page">
-        <h2>Hasod Downloads</h2>
-        <p>{error || 'Failed to load downloads'}</p>
+        <h2>{t.download.title}</h2>
+        <p>{error || t.common.error}</p>
       </div>
     );
   }
@@ -63,10 +65,10 @@ export default function Download() {
   ] as const;
 
   return (
-    <div className="download-page">
-      <h2>Hasod Downloads</h2>
+    <div className={`download-page ${isRTL ? 'rtl' : 'ltr'}`}>
+      <h2>{t.download.title}</h2>
       <p className="version-info">
-        Version {manifest.version} • Released {new Date(manifest.releaseDate).toLocaleDateString()}
+        {t.download.version} {manifest.version} • {t.download.released} {new Date(manifest.releaseDate).toLocaleDateString()}
       </p>
 
       <div className="download-grid">
@@ -85,7 +87,7 @@ export default function Download() {
                 className="download-button"
                 download
               >
-                Download
+                {t.download.downloadBtn}
               </a>
             </div>
           );
@@ -93,35 +95,32 @@ export default function Download() {
       </div>
 
       <div className="download-requirements">
-        <h3>Requirements</h3>
+        <h3>{t.download.requirements}</h3>
         <ul>
-          <li>Active Hasod Downloader subscription</li>
-          <li>macOS 10.15+ or Windows 10+</li>
+          <li>{t.download.requirementsList.subscription}</li>
+          <li>{t.download.requirementsList.os}</li>
         </ul>
       </div>
 
       <div className="macos-note">
-        <h3>macOS - App Won't Open?</h3>
-        <p>If you see "app is damaged" or "unidentified developer" - choose one of these fixes:</p>
+        <h3>{t.download.macFix.title}</h3>
+        <p>{t.download.macFix.subtitle}</p>
 
         <div className="fix-option">
-          <h4>Option 1: System Settings (Easiest)</h4>
+          <h4>{t.download.macFix.option1.title}</h4>
           <ol>
-            <li>Try to open the app - you'll see an error, click <strong>Done</strong></li>
-            <li>Click the Apple menu  → <strong>System Settings</strong></li>
-            <li>Click <strong>Privacy & Security</strong> in the sidebar</li>
-            <li>Scroll down until you see "Hasod Downloads was blocked"</li>
-            <li>Click <strong>Open Anyway</strong></li>
-            <li>Enter your Mac password if asked</li>
-            <li>Click <strong>Open</strong> to confirm</li>
+            {t.download.macFix.option1.steps.map((step, index) => (
+              <li key={index} dangerouslySetInnerHTML={{ __html: step.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+            ))}
           </ol>
         </div>
 
         <div className="fix-option">
-          <h4>Option 2: Terminal Command (Faster)</h4>
+          <h4>{t.download.macFix.option2.title}</h4>
           <ol>
-            <li>Press <strong>Cmd + Space</strong> and type <strong>Terminal</strong>, press Enter</li>
-            <li>Click the green box below to copy the command:</li>
+            {t.download.macFix.option2.steps.map((step, index) => (
+              <li key={index} dangerouslySetInnerHTML={{ __html: step.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>') }} />
+            ))}
           </ol>
           <code className="terminal-command" onClick={(e) => {
             navigator.clipboard.writeText('xattr -cr "/Applications/Hasod Downloads.app"');
@@ -131,17 +130,17 @@ export default function Download() {
           }}>
             xattr -cr "/Applications/Hasod Downloads.app"
           </code>
-          <p className="click-hint">Click to copy</p>
+          <p className="click-hint">{t.download.macFix.option2.clickToCopy}</p>
           <ol start={3}>
-            <li>In Terminal, press <strong>Cmd + V</strong> to paste, then press <strong>Enter</strong></li>
-            <li>Close Terminal and open the app - it will work now!</li>
+            <li>{t.download.macFix.option2.step3}</li>
+            <li>{t.download.macFix.option2.step4}</li>
           </ol>
         </div>
       </div>
 
       <p className="release-link">
         <a href={manifest.releaseUrl} target="_blank" rel="noopener noreferrer">
-          View all releases on GitHub
+          {t.download.viewReleases}
         </a>
       </p>
 

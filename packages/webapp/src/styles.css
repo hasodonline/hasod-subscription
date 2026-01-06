@@ -1230,3 +1230,127 @@ td {
     flex: 1;
   }
 }
+
+/* ============================================================================
+   Language Switcher Styles
+   ============================================================================ */
+
+.language-switcher {
+  display: flex;
+  gap: 4px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 4px;
+}
+
+.lang-btn {
+  padding: 6px 12px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition);
+  min-width: 40px;
+}
+
+.lang-btn:hover {
+  color: var(--primary);
+  background: rgba(0, 247, 194, 0.1);
+  transform: none;
+  box-shadow: none;
+}
+
+.lang-btn.active {
+  background: var(--primary);
+  color: #000;
+  box-shadow: 0 0 8px rgba(0, 247, 194, 0.4);
+}
+
+.lang-btn.active:hover {
+  background: var(--primary-dark);
+  color: #000;
+  transform: none;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+/* RTL/LTR Support */
+.app.ltr {
+  direction: ltr;
+}
+
+.app.rtl {
+  direction: rtl;
+}
+
+.app.ltr header nav,
+.app.ltr .header-actions {
+  direction: ltr;
+}
+
+.app.ltr .login-prompt {
+  direction: ltr;
+}
+
+.app.ltr thead th {
+  text-align: left;
+}
+
+.app.ltr .alert {
+  border-right: none;
+  border-left: 2px solid;
+}
+
+.app.ltr .subscription-info {
+  border-right: none;
+  border-left: 2px solid var(--primary);
+}
+
+.app.ltr .onboarding-form {
+  text-align: left;
+}
+
+.app.ltr .user-dropdown {
+  left: auto;
+  right: 0;
+}
+
+.app.ltr .user-dropdown-info {
+  padding-left: 0;
+  padding-right: 16px;
+  border-left: none;
+  border-right: 1px solid var(--border);
+}
+
+/* Download page RTL/LTR */
+.download-page.ltr {
+  direction: ltr;
+}
+
+.download-page.ltr .macos-note {
+  text-align: left;
+}
+
+.download-page.ltr .download-requirements {
+  text-align: left;
+}
+
+/* Responsive Language Switcher */
+@media (max-width: 768px) {
+  .language-switcher {
+    order: -1;
+  }
+
+  .header-actions {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+}
