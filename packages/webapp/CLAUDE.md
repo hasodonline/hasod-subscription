@@ -14,8 +14,9 @@
 - Routes: `src/App.tsx`
 - Auth: `src/contexts/AuthContext.tsx`
 - API: `src/api/`
+- **Generated Types:** `src/api/schema.d.ts` (from OpenAPI spec)
 
-**Important:** Always build shared package first if modified: `npm run build:shared`
+**Important:** API types are generated from OpenAPI spec. Run `npm run api:generate` after spec changes.
 
 ## Project Structure
 
@@ -37,12 +38,15 @@ packages/webapp/
 │   ├── contexts/            # React contexts
 │   │   └── AuthContext.tsx  # Firebase Auth state
 │   ├── api/                 # API client layer
-│   │   ├── client.ts
-│   │   ├── services.api.ts
-│   │   └── ...
+│   │   ├── schema.d.ts      # GENERATED - DO NOT EDIT (from OpenAPI)
+│   │   ├── client.ts        # Axios instance
+│   │   ├── services.api.ts  # Service endpoints
+│   │   ├── subscriptions.api.ts
+│   │   ├── transactions.api.ts
+│   │   └── download.api.ts
 │   ├── hooks/               # Custom hooks
 │   │   └── useServices.ts
-│   └── types/               # TypeScript types
+│   └── types/               # Legacy types (prefer generated schema)
 ├── public/                  # Static assets
 ├── index.html              # Entry HTML
 ├── vite.config.ts          # Vite config
@@ -95,33 +99,43 @@ const ADMIN_EMAILS = [
 const isAdmin = ADMIN_EMAILS.includes(user.email);
 ```
 
-## API Integration
+## API Integration (Spec-First)
+
+**Types Source:** Generated from OpenAPI spec (`packages/api-spec/openapi.yaml`)
+**Generated File:** `src/api/schema.d.ts` (DO NOT EDIT)
 
 **Base URL:**
 - Production: `https://us-central1-hasod-41a23.cloudfunctions.net/api`
-- Development: Auto-detected via Vite env
+- Development: Set in `packages/webapp/.env` as `VITE_FUNCTIONS_URL`
 
 **API Client:** `src/api/client.ts`
 
-**Example:**
+**Using Generated Types:**
 ```typescript
-import { apiClient } from './api/client';
+import type { components } from './schema';
+import apiClient from './client';
 
-// GET request
-const services = await apiClient.get('/services');
+// Define types from generated schema
+type Service = components['schemas']['Service'];
+type ServicesResponse = components['schemas']['ServicesResponse'];
 
-// POST request
-const result = await apiClient.post('/subscribe', {
-  serviceId: 'music-library',
-  planId: 'P-XXX'
-});
+// Use typed API calls
+export async function getServices(): Promise<Service[]> {
+  const response = await apiClient.get<ServicesResponse>('/services');
+  return response.data.services;
+}
 ```
 
-**API Modules:**
-- `services.api.ts` - Get services list
-- `subscriptions.api.ts` - Subscription operations
-- `transactions.api.ts` - Payment history
-- `download.api.ts` - Download service
+**API Modules (all use generated types):**
+- `services.api.ts` - Service catalog operations
+- `subscriptions.api.ts` - PayPal subscription operations
+- `transactions.api.ts` - Manual payment transactions
+- `download.api.ts` - Download service operations
+
+**Regenerating Types:**
+```bash
+npm run api:generate  # From root directory
+```
 
 ## Common Tasks
 

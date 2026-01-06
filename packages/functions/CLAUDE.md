@@ -12,8 +12,11 @@
 - Entry: `src/index.ts` (Express app + routes)
 - Services: `src/services/` (business logic)
 - Config: `src/utils/config.ts`
+- **API Spec:** `packages/api-spec/openapi.yaml` (Single source of truth)
 
 **API Base:** `https://us-central1-hasod-41a23.cloudfunctions.net/api`
+
+**IMPORTANT:** API changes MUST follow spec-first workflow. See [API Spec CLAUDE.md](../api-spec/CLAUDE.md).
 
 ## Project Structure
 
@@ -57,67 +60,24 @@ npm run functions:serve
 firebase deploy --only functions
 ```
 
-## API Endpoints
+## API Endpoints (Spec-First)
 
-### Public Endpoints
+**Full API Reference:** `packages/api-spec/openapi.yaml` (18 endpoints)
 
-**GET /services**
-- Get list of available subscription services
-- No auth required
-- Returns: Array of ServiceConfig objects
+All endpoints are defined in the OpenAPI specification. Below is a quick reference:
 
-**POST /subscribe**
-- Create PayPal subscription
-- Auth: Firebase Auth token
-- Body: `{ serviceId, planId, returnUrl, cancelUrl }`
+| Group | Endpoints |
+|-------|-----------|
+| Services | GET /services, GET /services/:serviceId |
+| Subscriptions | POST /create-subscription, POST /activate-subscription, POST /paypal-webhook |
+| User | GET /user/subscription-status |
+| Admin | POST /admin/services, DELETE /admin/services/:serviceId, POST /admin/manual-payment, GET /admin/manual-transactions, GET /admin/manual-transactions/:userId, POST /admin/cancel-subscription, POST /admin/manage-group, POST /admin/migrate-users, POST /admin/seed-services |
+| Downloads | POST /download/submit, GET /download/status/:jobId, GET /download/history, DELETE /download/:jobId |
 
-**POST /webhooks/paypal**
-- PayPal webhook handler
-- Processes subscription events
-- Logs to `webhookEvents` collection
-
-### User Endpoints (Auth Required)
-
-**GET /user/subscriptions**
-- Get user's active subscriptions
-- Auth: Firebase Auth token
-- Returns: User document with services
-
-**GET /user/subscription-status**
-- Get subscription status (for desktop app)
-- Auth: Bearer token OR email param
-- Returns: `{ email, services: {...} }`
-
-**POST /cancel-subscription**
-- Cancel PayPal subscription
-- Body: `{ serviceId }`
-
-### Admin Endpoints
-
-**GET /admin/users**
-- List all users
-- Admin check: Email in ADMIN_EMAILS
-
-**POST /admin/manual-payment**
-- Process manual payment
-- Creates transaction, updates subscription
-
-**POST /admin/cancel-subscription**
-- Admin cancel subscription
-
-### Download Endpoints
-
-**POST /download/create**
-- Create download job
-- Supports YouTube, Spotify, SoundCloud
-- Returns: `{ jobId }`
-
-**GET /download/:jobId**
-- Check download status
-- Returns: Progress and download URL
-
-**DELETE /download/:jobId**
-- Cancel download job
+**View full API documentation:**
+```bash
+npm run api:docs  # From root directory
+```
 
 ## Environment Configuration
 
@@ -217,23 +177,73 @@ firebase functions:config:set \
 
 ## Common Tasks
 
-### Adding New Endpoint
+### Adding New Endpoint (Spec-First Workflow)
 
-1. Add route in `src/index.ts`:
+**IMPORTANT:** All API changes MUST follow spec-first approach.
+
+**Step 1: Update OpenAPI spec first**
+```yaml
+# packages/api-spec/openapi.yaml
+paths:
+  /new-endpoint:
+    post:
+      operationId: newOperation
+      tags: [NewFeature]
+      summary: Description of what this does
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NewRequest'
+      responses:
+        '200':
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/NewResponse'
+
+components:
+  schemas:
+    NewRequest:
+      type: object
+      required: [field1]
+      properties:
+        field1:
+          type: string
+    NewResponse:
+      type: object
+      properties:
+        success:
+          type: boolean
+```
+
+**Step 2: Validate and generate types**
+```bash
+npm run api:validate    # From root
+npm run api:generate    # Generate TypeScript types for webapp
+```
+
+**Step 3: Implement the endpoint**
 ```typescript
-app.get('/new-endpoint', async (req: Request, res: Response, next: NextFunction) => {
+// packages/functions/src/index.ts
+app.post('/new-endpoint', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const result = await yourService.doSomething();
-    res.json(result);
+    const { field1 } = req.body;
+    const result = await yourService.doSomething(field1);
+    res.json({ success: true, data: result });
   } catch (error) {
     next(error);
   }
 });
 ```
 
-2. Build: `npm run build`
-3. Test locally: `npm run functions:serve`
-4. Deploy: `firebase deploy --only functions`
+**Step 4: Build, test, and deploy**
+```bash
+npm run build:functions     # Build TypeScript
+npm run functions:serve     # Test locally
+firebase deploy --only functions  # Deploy to production
+```
 
 ### Adding New Service
 
@@ -273,8 +283,14 @@ const snapshot = await db.collection('transactions')
   .get();
 ```
 
-### Using Shared Types
+### Using Types
 
+**Preferred:** Reference OpenAPI spec for request/response shapes
+```yaml
+# See packages/api-spec/openapi.yaml for canonical type definitions
+```
+
+**Legacy:** Import from shared package (for backward compatibility)
 ```typescript
 import { UserSubscription, ServiceConfig } from '../../../shared/src/types';
 
@@ -282,6 +298,8 @@ function processSubscription(sub: UserSubscription) {
   // Type-safe subscription handling
 }
 ```
+
+**Note:** New types should be added to OpenAPI spec first, not shared package.
 
 ## Testing
 
@@ -513,13 +531,14 @@ firebase functions:config:get
 ## Related Documentation
 
 - [Root CLAUDE.md](../../CLAUDE.md) - Project overview
+- [API Spec CLAUDE.md](../api-spec/CLAUDE.md) - OpenAPI spec (single source of truth)
 - [Webapp CLAUDE.md](../webapp/CLAUDE.md) - Frontend
-- [Shared CLAUDE.md](../shared/CLAUDE.md) - Shared types
+- [Shared CLAUDE.md](../shared/CLAUDE.md) - Shared types (legacy, prefer OpenAPI)
 - [Architecture](../../docs/ARCHITECTURE.md) - System design
-- [API Docs](../../docs/API.md) - Full API reference
 
 ---
 
-**Package:** @hasod/functions
+**Package:** functions
 **Runtime:** Node.js 20 (Firebase Functions v2)
 **Framework:** Express.js
+**API Contract:** OpenAPI 3.1 (`packages/api-spec/openapi.yaml`)

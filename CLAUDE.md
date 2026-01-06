@@ -3,22 +3,28 @@
 ## Quick Context
 
 **Project Type:** Monorepo - Subscription management platform with web, desktop, and backend
-**Tech Stack:** React + TypeScript, Firebase Functions, Python (desktop), Firebase hosting
+**Tech Stack:** React + TypeScript, Firebase Functions, Tauri (Rust), Firebase hosting
+**API Approach:** Spec-first with OpenAPI 3.1
+
 **Main Commands:**
-- `npm run dev` - Run webapp dev server
-- `npm run functions:serve` - Run backend emulator
-- `npm run build:shared` - Build shared package (required before webapp/functions)
-- `npm run deploy` - Deploy everything to Firebase
+```bash
+npm run dev              # Run webapp dev server
+npm run functions:serve  # Run backend emulator
+npm run api:generate     # Generate types from OpenAPI spec
+npm run build            # Build all packages
+npm run deploy           # Deploy everything to Firebase
+```
 
 ## Project Structure
 
 ```
 hasod-subscription/
 ├── packages/
-│   ├── webapp/              # React web app (see packages/webapp/CLAUDE.md)
-│   ├── functions/           # Firebase Cloud Functions (see packages/functions/CLAUDE.md)
-│   ├── shared/              # Shared types/utils (see packages/shared/CLAUDE.md)
-│   └── desktop/             # Python desktop app (see packages/desktop/CLAUDE.md)
+│   ├── api-spec/            # OpenAPI 3.1 specification (SINGLE SOURCE OF TRUTH)
+│   ├── webapp/              # React web app
+│   ├── functions/           # Firebase Cloud Functions
+│   ├── shared/              # Shared types/utils (legacy, prefer OpenAPI)
+│   └── desktop/             # Tauri desktop app (Rust + React)
 ├── docs/                    # Documentation
 ├── scripts/                 # Build & deployment scripts
 └── CLAUDE.md               # This file
@@ -26,32 +32,46 @@ hasod-subscription/
 
 ## Key Principles
 
-### 1. Package Ownership
-- **webapp + functions**: Web development work (React frontend + Express backend)
-- **shared**: Maintained ONLY by webapp/functions developers
-- **desktop**: Desktop app development (Python, reads shared package)
+### 1. Spec-First API Development
+⚠️ **CRITICAL**: All API changes MUST follow this workflow:
 
-### 2. Shared Package Rule
-⚠️ **CRITICAL**: Only webapp/functions work can modify `packages/shared/`
-- Desktop app consumes shared package (read-only)
-- Always build shared before using: `npm run build:shared`
-
-### 3. Development Workflow
 ```bash
-# 1. Install dependencies (first time)
-npm install
+# 1. Update OpenAPI spec first
+packages/api-spec/openapi.yaml
 
-# 2. Build shared package (when changed)
-npm run build:shared
+# 2. Validate and generate types
+npm run api:validate
+npm run api:generate
 
-# 3. Run webapp
-npm run dev
+# 3. Implement backend
+packages/functions/src/index.ts
 
-# 4. Run functions (optional, separate terminal)
-npm run functions:serve
+# 4. Use generated types in frontend
+import type { components } from './schema';
 ```
 
+### 2. Package Ownership
+- **api-spec + webapp + functions**: Web development (spec-first)
+- **shared**: Maintained ONLY by webapp/functions developers (legacy)
+- **desktop**: Desktop app development (Tauri/Rust)
+
+### 3. Generated Types
+- **Source:** `packages/api-spec/openapi.yaml`
+- **Output:** `packages/webapp/src/api/schema.d.ts`
+- All API types come from OpenAPI spec
+
 ## Quick Start
+
+### For API Development (Spec-First)
+See: [packages/api-spec/CLAUDE.md](packages/api-spec/CLAUDE.md)
+```bash
+# Edit spec
+code packages/api-spec/openapi.yaml
+
+# Validate and generate types
+npm run api:validate
+npm run api:generate
+```
 
 ### For Web Development
 See: [packages/webapp/CLAUDE.md](packages/webapp/CLAUDE.md)
@@ -63,7 +83,7 @@ npm run functions:serve        # Start functions emulator
 ### For Backend API Development
 See: [packages/functions/CLAUDE.md](packages/functions/CLAUDE.md)
 ```bash
-npm run functions:build        # Build TypeScript
+npm run build:functions        # Build TypeScript
 npm run functions:serve        # Run emulator
 ```
 
@@ -71,27 +91,24 @@ npm run functions:serve        # Run emulator
 See: [packages/desktop/CLAUDE.md](packages/desktop/CLAUDE.md)
 ```bash
 cd packages/desktop
-python3 -m venv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python main.py
-```
-
-### For Shared Code
-See: [packages/shared/CLAUDE.md](packages/shared/CLAUDE.md)
-```bash
-npm run build:shared           # Build package
-npm run watch -w @hasod/shared # Watch mode
+npm run dev                    # Run in development mode
+npm run build                  # Build production app
 ```
 
 ## Architecture Overview
 
+### API Specification (packages/api-spec/)
+- **OpenAPI 3.1** - Single source of truth for API contracts
+- **18 endpoints** documented
+- Generates TypeScript types for webapp
+- Desktop references spec for types
+
 ### Web Application (packages/webapp/)
 - React 18 + TypeScript + Vite
+- **API types from OpenAPI** (`src/api/schema.d.ts`)
 - Firebase Auth (Google OAuth)
 - Firestore for data
 - React Router for routing
-- Subscription management UI
 
 ### Backend API (packages/functions/)
 - Firebase Cloud Functions v2 (Node.js 20)
@@ -101,53 +118,105 @@ npm run watch -w @hasod/shared # Watch mode
 - Download service (YouTube, Spotify)
 
 ### Desktop App (packages/desktop/)
-- Python + PySide6 (Qt)
+- **Tauri 2** (Rust + React)
 - License validation via Cloud Functions API
 - Downloads: YouTube, Spotify, SoundCloud
 - Requires active `hasod-downloader` subscription
 
 ### Shared Package (packages/shared/)
-- TypeScript types and interfaces
+- TypeScript types (backward compatibility)
 - Constants (API URLs, admin emails)
 - Common utilities
-- Consumed by webapp, functions, and desktop
+- **Note:** Prefer OpenAPI-generated types for new code
 
-## Common Tasks
+## API Endpoints (18 total)
 
-### Adding a New Feature
+Defined in `packages/api-spec/openapi.yaml`:
 
-1. **Determine scope**: Webapp only? Backend only? Both?
-2. **Navigate to package**: `cd packages/webapp` or `cd packages/functions`
-3. **Read package CLAUDE.md**: For package-specific guidance
-4. **Develop**: Make changes
-5. **Test locally**: Run dev servers
-6. **Deploy**: `npm run deploy`
+| Group | Endpoints |
+|-------|-----------|
+| Services | GET /services, GET /services/:serviceId |
+| Subscriptions | POST /create-subscription, POST /activate-subscription, POST /paypal-webhook |
+| User | GET /user/subscription-status |
+| Admin | POST /admin/services, DELETE /admin/services/:serviceId, POST /admin/manual-payment, GET /admin/manual-transactions, GET /admin/manual-transactions/:userId, POST /admin/cancel-subscription, POST /admin/manage-group, POST /admin/migrate-users, POST /admin/seed-services |
+| Downloads | POST /download/submit, GET /download/status/:jobId, GET /download/history, DELETE /download/:jobId |
 
-### Adding Shared Types
+## End-to-End Development Workflow
 
-1. **Edit**: `packages/shared/src/types/index.ts`
-2. **Build**: `npm run build:shared`
-3. **Import in webapp**: `import { Type } from '@hasod/shared/types'`
-4. **Import in functions**: `import { Type } from '../../../shared/src/types'`
-
-### Deploying Changes
+### Adding a New API Endpoint
 
 ```bash
-# Build everything
-npm run build
+# 1. Define in OpenAPI spec
+# Edit packages/api-spec/openapi.yaml
 
-# Deploy all (hosting + functions + firestore)
+# 2. Validate spec
+npm run api:validate
+
+# 3. Generate TypeScript types
+npm run api:generate
+
+# 4. Implement backend endpoint
+# Edit packages/functions/src/index.ts
+
+# 5. Create frontend API client
+# Edit packages/webapp/src/api/yourFeature.api.ts
+
+# 6. Build and test
+npm run build:functions
+npm run functions:serve
+npm run build:webapp
+npm run dev
+
+# 7. Deploy
+npm run deploy
+```
+
+### Modifying Existing Endpoint
+
+```bash
+# 1. Update spec first
+# Edit packages/api-spec/openapi.yaml
+
+# 2. Regenerate types
+npm run api:generate
+
+# 3. TypeScript will show compile errors for breaking changes
+
+# 4. Fix implementation in functions and webapp
+
+# 5. Build and deploy
+npm run build
+npm run deploy
+```
+
+## Deployment
+
+### Pre-Deployment Checklist
+```bash
+npm run api:validate    # Validate OpenAPI spec
+npm run build           # Build all packages (shared → webapp → functions)
+```
+
+### Deploy Commands
+```bash
+# Deploy everything
 npm run deploy
 
 # Or deploy individually
 firebase deploy --only hosting      # Webapp only
 firebase deploy --only functions    # Functions only
+firebase deploy --only firestore:rules
+```
+
+### Verify Deployment
+```bash
+curl https://us-central1-hasod-41a23.cloudfunctions.net/api/services
 ```
 
 ## Environment Setup
 
 ### Required Files
-- `.env` (root) - Webapp environment variables
+- `packages/webapp/.env` - Webapp environment variables
 - `packages/functions/.env.yaml` - Functions secrets
 - `firebase.json` - Firebase configuration
 - `firestore.rules` - Security rules
@@ -162,124 +231,61 @@ Current admins:
 - `hasod@hasodonline.com`
 - `yubarkan@gmail.com`
 
-## Firebase Services
-
-- **Authentication**: Google OAuth
-- **Firestore**: Database
-  - Collections: `users`, `services`, `transactions`, `webhookEvents`
-- **Cloud Functions**: Backend API
-- **Hosting**: Static site hosting
-- **Storage**: File uploads (downloads)
-
 ## Important URLs
 
 - **Production Webapp**: https://hasod-41a23.web.app
 - **API Base**: https://us-central1-hasod-41a23.cloudfunctions.net/api
 - **Firebase Console**: https://console.firebase.google.com/project/hasod-41a23
-
-## Dependencies Management
-
-```bash
-# Root workspace
-npm install                           # Install all packages
-
-# Specific package
-npm install <package> -w @hasod/webapp
-npm install <package> -w @hasod/functions
-npm install <package> -w @hasod/shared
-
-# Desktop app (Python)
-cd packages/desktop
-pip install -r requirements.txt
-```
-
-## Testing
-
-```bash
-# Run webapp locally
-npm run dev
-
-# Test functions locally
-npm run functions:serve
-curl http://localhost:5001/hasod-41a23/us-central1/api/services
-
-# Test desktop app
-cd packages/desktop && python main.py
-```
-
-## Documentation
-
-- **[ARCHITECTURE.md](docs/ARCHITECTURE.md)** - System design
-- **[API.md](docs/API.md)** - API endpoints
-- **[SETUP.md](docs/SETUP.md)** - Detailed setup
-- **[TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)** - Common issues
+- **API Documentation**: Run `npm run api:docs` locally
 
 ## Package-Specific Instructions
 
-Each package has its own CLAUDE.md with detailed instructions:
+Each package has its own CLAUDE.md:
 
+- **[packages/api-spec/CLAUDE.md](packages/api-spec/CLAUDE.md)** - OpenAPI specification
 - **[packages/webapp/CLAUDE.md](packages/webapp/CLAUDE.md)** - React webapp development
 - **[packages/functions/CLAUDE.md](packages/functions/CLAUDE.md)** - Backend API development
-- **[packages/shared/CLAUDE.md](packages/shared/CLAUDE.md)** - Shared code (types, utils)
+- **[packages/shared/CLAUDE.md](packages/shared/CLAUDE.md)** - Shared code (legacy)
 - **[packages/desktop/CLAUDE.md](packages/desktop/CLAUDE.md)** - Desktop app development
 
 ## Rules & Conventions
 
 ### DO:
-- ✅ Read package-specific CLAUDE.md before working
-- ✅ Build shared package before building webapp/functions
+- ✅ **Update OpenAPI spec before implementing API changes**
+- ✅ Run `npm run api:generate` after spec changes
+- ✅ Use generated types from `schema.d.ts`
 - ✅ Test locally before deploying
-- ✅ Update documentation when adding features
 - ✅ Follow TypeScript strict mode
 
 ### DON'T:
-- ❌ Modify `packages/shared/` from desktop app work
-- ❌ Deploy without testing in emulator first
+- ❌ Implement API without updating spec first
+- ❌ Manually define API types (use generated types)
+- ❌ Deploy without validating spec
 - ❌ Commit sensitive files (`.env`, `service-account-key.json`)
-- ❌ Skip building shared package when it changes
-- ❌ Hardcode secrets (use environment variables)
-
-## Git Workflow
-
-```bash
-# Feature development
-git checkout -b feature/your-feature
-# ... make changes ...
-npm run build                  # Verify builds
-git add .
-git commit -m "feat: Your feature description"
-git push origin feature/your-feature
-
-# Deployment
-git checkout master
-git pull origin master
-npm run deploy
-```
+- ❌ Skip testing in emulator
 
 ## Troubleshooting
 
+### "Type doesn't match API response"
+```bash
+npm run api:generate  # Regenerate types from spec
+```
+
 ### "Module not found @hasod/shared"
 ```bash
-cd packages/shared
-npm run build
+cd packages/shared && npm run build
 ```
 
 ### "Firebase deploy failed"
 ```bash
-# Check Firebase login
 firebase login
-
-# Verify project
-firebase use --add
-
-# Check logs
+firebase use hasod-41a23
 firebase functions:log
 ```
 
-### "Desktop app license validation fails"
-- Verify `/user/subscription-status` endpoint exists in functions
-- Check user has active `hasod-downloader` subscription
-- Verify API URL is correct
+### "API calls fail in production"
+- Check `packages/webapp/.env` has `VITE_FUNCTIONS_URL`
+- Rebuild and redeploy: `npm run build:webapp && firebase deploy --only hosting`
 
 ## Support
 
@@ -290,5 +296,5 @@ firebase functions:log
 ---
 
 **Last Updated**: January 2026
-**Claude Code Version**: 1.0
+**API Spec Version**: OpenAPI 3.1
 **Project Status**: Production (webapp/functions), Beta (desktop)
