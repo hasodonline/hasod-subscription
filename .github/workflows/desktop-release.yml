@@ -155,8 +155,12 @@ jobs:
           fi
 
           # Create placeholder for spotdl (optional, downloads work without it)
-          touch binaries/spotdl-$TARGET
-          chmod +x binaries/spotdl-$TARGET 2>/dev/null || true
+          if [ "$TARGET" = "x86_64-pc-windows-msvc" ]; then
+            touch binaries/spotdl-$TARGET.exe
+          else
+            touch binaries/spotdl-$TARGET
+            chmod +x binaries/spotdl-$TARGET
+          fi
 
           ls -la binaries/
         shell: bash
