@@ -290,3 +290,23 @@ jobs:
           git add packages/webapp/public/desktop-releases.json
           git diff --staged --quiet || git commit -m "chore: Update desktop releases manifest to v${{ needs.get-version.outputs.version }}"
           git push
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build webapp
+        run: npm run build:webapp
+
+      - name: Deploy to Firebase
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: '${{ secrets.GITHUB_TOKEN }}'
+          firebaseServiceAccount: '${{ secrets.FIREBASE_SERVICE_ACCOUNT }}'
+          channelId: live
+          projectId: hasod-41a23
