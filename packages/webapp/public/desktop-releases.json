@@ -1,6 +1,6 @@
 {
   "version": "0.1.1",
-  "releaseDate": "2026-01-06T18:27:51Z",
+  "releaseDate": "2026-01-06T19:10:14Z",
   "releaseUrl": "https://github.com/hasodonline/hasod-subscription/releases/tag/desktop-v0.1.1",
   "downloads": {
     "macOS-arm64": {
@@ -23,13 +23,6 @@
       "url": "https://github.com/hasodonline/hasod-subscription/releases/download/desktop-v0.1.1/Hasod-Downloads_0.1.1_Windows-x64.msi",
       "filename": "Hasod-Downloads_0.1.1_Windows-x64.msi",
       "size": "~20 MB"
-    },
-    "Linux-x64": {
-      "name": "Linux",
-      "description": "AppImage (Universal)",
-      "url": "https://github.com/hasodonline/hasod-subscription/releases/download/desktop-v0.1.1/Hasod-Downloads_0.1.1_Linux-x64.AppImage",
-      "filename": "Hasod-Downloads_0.1.1_Linux-x64.AppImage",
-      "size": "~25 MB"
     }
   }
 }
