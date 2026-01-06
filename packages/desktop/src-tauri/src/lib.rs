@@ -1,6 +1,7 @@
 // Hasod Downloads - Desktop Application
 // License validation and download management with Tauri
 // OAuth 2.0 + PKCE authentication with device binding
+// Multi-service download queue with organized file structure
 
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use base64::Engine;
@@ -12,6 +13,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::Arc;
 use tauri::{
     image::Image,
     menu::{Menu, MenuItem},
@@ -66,6 +68,230 @@ struct ServiceSubscription {
     #[serde(rename = "expiresAt")]
     expires_at: Option<FirestoreTimestamp>,
 }
+
+// ============================================================================
+// Music Service Detection
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum MusicService {
+    YouTube,
+    Spotify,
+    SoundCloud,
+    Deezer,
+    Tidal,
+    AppleMusic,
+    Bandcamp,
+    Unknown,
+}
+
+impl MusicService {
+    fn from_url(url: &str) -> Self {
+        let url_lower = url.to_lowercase();
+        if url_lower.contains("youtube.com") || url_lower.contains("youtu.be") || url_lower.contains("music.youtube.com") {
+            MusicService::YouTube
+        } else if url_lower.contains("spotify.com") || url_lower.starts_with("spotify:") {
+            MusicService::Spotify
+        } else if url_lower.contains("soundcloud.com") {
+            MusicService::SoundCloud
+        } else if url_lower.contains("deezer.com") {
+            MusicService::Deezer
+        } else if url_lower.contains("tidal.com") {
+            MusicService::Tidal
+        } else if url_lower.contains("music.apple.com") {
+            MusicService::AppleMusic
+        } else if url_lower.contains("bandcamp.com") {
+            MusicService::Bandcamp
+        } else {
+            MusicService::Unknown
+        }
+    }
+
+    fn display_name(&self) -> &str {
+        match self {
+            MusicService::YouTube => "YouTube",
+            MusicService::Spotify => "Spotify",
+            MusicService::SoundCloud => "SoundCloud",
+            MusicService::Deezer => "Deezer",
+            MusicService::Tidal => "Tidal",
+            MusicService::AppleMusic => "Apple Music",
+            MusicService::Bandcamp => "Bandcamp",
+            MusicService::Unknown => "Unknown",
+        }
+    }
+
+    fn icon(&self) -> &str {
+        match self {
+            MusicService::YouTube => "🎬",
+            MusicService::Spotify => "🟢",
+            MusicService::SoundCloud => "🟠",
+            MusicService::Deezer => "🟣",
+            MusicService::Tidal => "🔵",
+            MusicService::AppleMusic => "🍎",
+            MusicService::Bandcamp => "🎵",
+            MusicService::Unknown => "❓",
+        }
+    }
+}
+
+// ============================================================================
+// Download Queue Types
+// ============================================================================
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub enum DownloadStatus {
+    Queued,
+    Downloading,
+    Converting,
+    Complete,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TrackMetadata {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+    pub duration: Option<u32>,  // seconds
+    pub thumbnail: Option<String>,
+}
+
+impl Default for TrackMetadata {
+    fn default() -> Self {
+        TrackMetadata {
+            title: "Unknown".to_string(),
+            artist: "Unknown Artist".to_string(),
+            album: "Unknown Album".to_string(),
+            duration: None,
+            thumbnail: None,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DownloadJob {
+    pub id: String,
+    pub url: String,
+    pub service: MusicService,
+    pub status: DownloadStatus,
+    pub progress: f32,  // 0.0 to 100.0
+    pub message: String,
+    pub metadata: TrackMetadata,
+    pub output_path: Option<String>,
+    pub created_at: i64,
+    pub started_at: Option<i64>,
+    pub completed_at: Option<i64>,
+    pub error: Option<String>,
+}
+
+impl DownloadJob {
+    fn new(url: String) -> Self {
+        let service = MusicService::from_url(&url);
+        // Create initial title from URL for better UX while fetching metadata
+        let initial_title = Self::extract_title_from_url(&url, &service);
+        DownloadJob {
+            id: Uuid::new_v4().to_string(),
+            url,
+            service,
+            status: DownloadStatus::Queued,
+            progress: 0.0,
+            message: "Waiting in queue...".to_string(),
+            metadata: TrackMetadata {
+                title: initial_title,
+                artist: String::new(), // Empty instead of "Unknown Artist"
+                album: String::new(),  // Empty instead of "Unknown Album"
+                duration: None,
+                thumbnail: None,
+            },
+            output_path: None,
+            created_at: chrono::Utc::now().timestamp(),
+            started_at: None,
+            completed_at: None,
+            error: None,
+        }
+    }
+
+    /// Extract a readable title from URL for initial display
+    fn extract_title_from_url(url: &str, service: &MusicService) -> String {
+        // Try to extract meaningful info from the URL
+        match service {
+            MusicService::YouTube => {
+                // YouTube: try to get video title from URL path
+                if let Some(v_param) = url.find("v=") {
+                    let video_id = &url[v_param + 2..].split('&').next().unwrap_or("");
+                    if !video_id.is_empty() {
+                        return format!("YouTube: {}", &video_id[..video_id.len().min(11)]);
+                    }
+                }
+                "YouTube video".to_string()
+            }
+            MusicService::Spotify => {
+                // Spotify: extract track name from URL if possible
+                if let Some(track_pos) = url.find("/track/") {
+                    let after_track = &url[track_pos + 7..];
+                    let track_id = after_track.split('?').next().unwrap_or(after_track);
+                    return format!("Spotify: {}", &track_id[..track_id.len().min(22)]);
+                }
+                "Spotify track".to_string()
+            }
+            MusicService::AppleMusic => {
+                // Apple Music: try to extract song name from URL path
+                if let Some(album_pos) = url.find("/album/") {
+                    let after_album = &url[album_pos + 7..];
+                    // URL format: /album/song-name/id?i=trackid
+                    let song_slug = after_album.split('/').next().unwrap_or("");
+                    if !song_slug.is_empty() && song_slug != "album" {
+                        // Convert URL slug to readable: "song-name" -> "Song Name"
+                        let readable: String = song_slug
+                            .split('-')
+                            .map(|word| {
+                                let mut chars = word.chars();
+                                match chars.next() {
+                                    None => String::new(),
+                                    Some(first) => first.to_uppercase().chain(chars).collect(),
+                                }
+                            })
+                            .collect::<Vec<_>>()
+                            .join(" ");
+                        return format!("🍎 {}", readable);
+                    }
+                }
+                "Apple Music track".to_string()
+            }
+            MusicService::SoundCloud => "SoundCloud track".to_string(),
+            MusicService::Deezer => "Deezer track".to_string(),
+            MusicService::Tidal => "Tidal track".to_string(),
+            MusicService::Bandcamp => "Bandcamp track".to_string(),
+            MusicService::Unknown => {
+                // Show truncated URL for unknown services
+                let clean_url = url.trim_start_matches("https://").trim_start_matches("http://");
+                if clean_url.len() > 40 {
+                    format!("{}...", &clean_url[..40])
+                } else {
+                    clean_url.to_string()
+                }
+            }
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QueueStatus {
+    pub jobs: Vec<DownloadJob>,
+    pub active_count: usize,
+    pub queued_count: usize,
+    pub completed_count: usize,
+    pub error_count: usize,
+    pub is_processing: bool,
+}
+
+// Global download queue
+static DOWNLOAD_QUEUE: std::sync::LazyLock<Arc<Mutex<Vec<DownloadJob>>>> =
+    std::sync::LazyLock::new(|| Arc::new(Mutex::new(Vec::new())));
+
+// Flag to track if queue processor is running
+static QUEUE_PROCESSING: std::sync::LazyLock<Arc<Mutex<bool>>> =
+    std::sync::LazyLock::new(|| Arc::new(Mutex::new(false)));
 
 #[derive(Debug, Serialize, Deserialize)]
 struct DownloadProgress {
@@ -129,6 +355,15 @@ const GOOGLE_OAUTH_CLIENT_ID: &str = env!("HASOD_GOOGLE_OAUTH_CLIENT_ID");
 const GOOGLE_OAUTH_CLIENT_SECRET: &str = env!("HASOD_GOOGLE_OAUTH_CLIENT_SECRET");
 const OAUTH_CALLBACK_PORT: u16 = 8420;
 const KEYCHAIN_SERVICE: &str = "hasod-downloads";
+
+// Spotify API credentials (optional - falls back to oEmbed if not set)
+// Get these from https://developer.spotify.com/dashboard
+const SPOTIFY_CLIENT_ID: Option<&str> = option_env!("HASOD_SPOTIFY_CLIENT_ID");
+const SPOTIFY_CLIENT_SECRET: Option<&str> = option_env!("HASOD_SPOTIFY_CLIENT_SECRET");
+
+// Cached Spotify token
+static SPOTIFY_TOKEN_CACHE: std::sync::LazyLock<Arc<Mutex<Option<(String, i64)>>>> =
+    std::sync::LazyLock::new(|| Arc::new(Mutex::new(None)));
 
 // ============================================================================
 // PKCE Helper Functions
@@ -491,57 +726,1037 @@ async fn check_license(user_email: Option<String>) -> Result<LicenseStatus, Stri
     }
 }
 
+// ============================================================================
+// Download Queue Management Commands
+// ============================================================================
+
+/// Add a URL to the download queue
 #[tauri::command]
-async fn download_youtube(
-    app: AppHandle,
+fn add_to_queue(url: String) -> Result<DownloadJob, String> {
+    let job = DownloadJob::new(url);
+    let job_clone = job.clone();
+
+    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let queue_count = queue.len();
+    queue.push(job);
+
+    println!("[Queue] Added job {} ({}) to queue", job_clone.id, job_clone.service.display_name());
+
+    // Immediately update floating panel to show processing status
+    #[cfg(target_os = "macos")]
+    {
+        let service_name = job_clone.service.display_name();
+        update_floating_panel_status("processing", 0.0, &format!("Processing {}...", service_name), queue_count + 1);
+    }
+
+    Ok(job_clone)
+}
+
+/// Add multiple URLs to the queue
+#[tauri::command]
+fn add_multiple_to_queue(urls: Vec<String>) -> Result<Vec<DownloadJob>, String> {
+    let mut jobs = Vec::new();
+    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+
+    for url in urls {
+        let job = DownloadJob::new(url);
+        jobs.push(job.clone());
+        queue.push(job);
+    }
+
+    println!("[Queue] Added {} jobs to queue", jobs.len());
+    Ok(jobs)
+}
+
+/// Get current queue status
+#[tauri::command]
+fn get_queue_status() -> Result<QueueStatus, String> {
+    let queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let is_processing = *QUEUE_PROCESSING.lock().map_err(|e| format!("Lock error: {}", e))?;
+
+    let active_count = queue.iter().filter(|j| j.status == DownloadStatus::Downloading || j.status == DownloadStatus::Converting).count();
+    let queued_count = queue.iter().filter(|j| j.status == DownloadStatus::Queued).count();
+    let completed_count = queue.iter().filter(|j| j.status == DownloadStatus::Complete).count();
+    let error_count = queue.iter().filter(|j| j.status == DownloadStatus::Error).count();
+
+    Ok(QueueStatus {
+        jobs: queue.clone(),
+        active_count,
+        queued_count,
+        completed_count,
+        error_count,
+        is_processing,
+    })
+}
+
+/// Clear completed and error jobs from queue
+#[tauri::command]
+fn clear_completed_jobs() -> Result<usize, String> {
+    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let initial_len = queue.len();
+    queue.retain(|j| j.status != DownloadStatus::Complete && j.status != DownloadStatus::Error);
+    let removed = initial_len - queue.len();
+    println!("[Queue] Cleared {} completed/error jobs", removed);
+    Ok(removed)
+}
+
+/// Remove a specific job from queue
+#[tauri::command]
+fn remove_from_queue(job_id: String) -> Result<bool, String> {
+    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+    let initial_len = queue.len();
+    queue.retain(|j| j.id != job_id);
+    let removed = initial_len != queue.len();
+    if removed {
+        println!("[Queue] Removed job {}", job_id);
+    }
+    Ok(removed)
+}
+
+/// Helper function to sanitize filename (remove invalid characters)
+fn sanitize_filename(name: &str) -> String {
+    name.chars()
+        .map(|c| match c {
+            '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+            _ => c,
+        })
+        .collect::<String>()
+        .trim()
+        .to_string()
+}
+
+/// Helper function to create organized folder structure
+fn get_organized_output_path(base_dir: &str, metadata: &TrackMetadata) -> PathBuf {
+    let artist = sanitize_filename(&metadata.artist);
+    let album = sanitize_filename(&metadata.album);
+    let title = sanitize_filename(&metadata.title);
+
+    // Create path: base_dir/Artist/Album/Title.mp3
+    let path = PathBuf::from(base_dir)
+        .join(if artist.is_empty() || artist == "Unknown Artist" { "Unknown Artist" } else { &artist })
+        .join(if album.is_empty() || album == "Unknown Album" { "Singles" } else { &album });
+
+    // Ensure directory exists
+    fs::create_dir_all(&path).ok();
+
+    path.join(format!("{}.mp3", title))
+}
+
+/// Parse yt-dlp progress output to extract percentage
+fn parse_ytdlp_progress(line: &str) -> Option<f32> {
+    // Format: [download]  45.2% of 10.00MiB at 1.00MiB/s ETA 00:05
+    if line.contains("[download]") && line.contains("%") {
+        let parts: Vec<&str> = line.split_whitespace().collect();
+        for part in parts {
+            if part.ends_with('%') {
+                if let Ok(pct) = part.trim_end_matches('%').parse::<f32>() {
+                    return Some(pct);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// Parse yt-dlp metadata output
+fn parse_ytdlp_metadata(json_str: &str) -> TrackMetadata {
+    if let Ok(json) = serde_json::from_str::<serde_json::Value>(json_str) {
+        TrackMetadata {
+            title: json.get("title").and_then(|v| v.as_str()).unwrap_or("Unknown").to_string(),
+            artist: json.get("artist")
+                .or_else(|| json.get("uploader"))
+                .or_else(|| json.get("channel"))
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown Artist")
+                .to_string(),
+            album: json.get("album")
+                .and_then(|v| v.as_str())
+                .unwrap_or("Unknown Album")
+                .to_string(),
+            duration: json.get("duration").and_then(|v| v.as_u64()).map(|d| d as u32),
+            thumbnail: json.get("thumbnail").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        }
+    } else {
+        TrackMetadata::default()
+    }
+}
+
+/// Update job status in queue
+fn update_job_status(job_id: &str, status: DownloadStatus, progress: f32, message: &str) {
+    if let Ok(mut queue) = DOWNLOAD_QUEUE.lock() {
+        if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+            job.status = status;
+            job.progress = progress;
+            job.message = message.to_string();
+        }
+    }
+}
+
+/// Spotify track metadata from Web API
+#[derive(Debug, Clone)]
+struct SpotifyTrackInfo {
+    title: String,
+    artist: String,
+    album: String,
+    thumbnail: Option<String>,
+    duration_ms: Option<u64>,  // Track duration in milliseconds for verification
+}
+
+/// Get Spotify access token using Client Credentials flow
+async fn get_spotify_access_token() -> Result<String, String> {
+    let client_id = SPOTIFY_CLIENT_ID.ok_or("Spotify Client ID not configured")?;
+    let client_secret = SPOTIFY_CLIENT_SECRET.ok_or("Spotify Client Secret not configured")?;
+
+    // Check cache first
+    {
+        let cache = SPOTIFY_TOKEN_CACHE.lock().map_err(|e| format!("Lock error: {}", e))?;
+        if let Some((token, expires_at)) = cache.as_ref() {
+            let now = chrono::Utc::now().timestamp();
+            if *expires_at > now + 60 {  // 60 second buffer
+                println!("[Spotify] Using cached access token");
+                return Ok(token.clone());
+            }
+        }
+    }
+
+    println!("[Spotify] Fetching new access token via Client Credentials");
+
+    // Base64 encode client_id:client_secret
+    let credentials = format!("{}:{}", client_id, client_secret);
+    let encoded = base64::engine::general_purpose::STANDARD.encode(credentials.as_bytes());
+
+    let client = reqwest::Client::new();
+    let response = client
+        .post("https://accounts.spotify.com/api/token")
+        .header("Authorization", format!("Basic {}", encoded))
+        .header("Content-Type", "application/x-www-form-urlencoded")
+        .body("grant_type=client_credentials")
+        .send()
+        .await
+        .map_err(|e| format!("Spotify token request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("Spotify token request failed: {}", error_text));
+    }
+
+    #[derive(serde::Deserialize)]
+    struct TokenResponse {
+        access_token: String,
+        expires_in: i64,
+    }
+
+    let token_data: TokenResponse = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Spotify token response: {}", e))?;
+
+    // Cache the token
+    let expires_at = chrono::Utc::now().timestamp() + token_data.expires_in;
+    {
+        let mut cache = SPOTIFY_TOKEN_CACHE.lock().map_err(|e| format!("Lock error: {}", e))?;
+        *cache = Some((token_data.access_token.clone(), expires_at));
+    }
+
+    println!("[Spotify] Got new access token, expires in {} seconds", token_data.expires_in);
+    Ok(token_data.access_token)
+}
+
+/// Extract track ID from Spotify URL
+fn extract_spotify_track_id(url: &str) -> Option<String> {
+    // Handle URLs like:
+    // - https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6
+    // - https://open.spotify.com/track/6rqhFgbbKwnb9MLmUQDhG6?si=xxx
+    // - spotify:track:6rqhFgbbKwnb9MLmUQDhG6
+
+    if url.starts_with("spotify:track:") {
+        return Some(url.replace("spotify:track:", ""));
+    }
+
+    if url.contains("/track/") {
+        let parts: Vec<&str> = url.split("/track/").collect();
+        if parts.len() > 1 {
+            // Remove query string if present
+            let id_part = parts[1].split('?').next().unwrap_or(parts[1]);
+            return Some(id_part.to_string());
+        }
+    }
+
+    None
+}
+
+/// Get full track metadata from Spotify Web API
+async fn get_spotify_track_from_api(track_id: &str) -> Result<SpotifyTrackInfo, String> {
+    let token = get_spotify_access_token().await?;
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&format!("https://api.spotify.com/v1/tracks/{}", track_id))
+        .header("Authorization", format!("Bearer {}", token))
+        .send()
+        .await
+        .map_err(|e| format!("Spotify API request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        let error_text = response.text().await.unwrap_or_default();
+        return Err(format!("Spotify API error: {}", error_text));
+    }
+
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse Spotify track response: {}", e))?;
+
+    // Extract track info
+    let title = json.get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown")
+        .to_string();
+
+    // Get artists (join multiple artists with ", ")
+    let artist = json.get("artists")
+        .and_then(|v| v.as_array())
+        .map(|artists| {
+            artists.iter()
+                .filter_map(|a| a.get("name").and_then(|n| n.as_str()))
+                .collect::<Vec<_>>()
+                .join(", ")
+        })
+        .unwrap_or_else(|| "Unknown Artist".to_string());
+
+    // Get album name
+    let album = json.get("album")
+        .and_then(|v| v.get("name"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown Album")
+        .to_string();
+
+    // Get thumbnail (prefer 300x300)
+    let thumbnail = json.get("album")
+        .and_then(|v| v.get("images"))
+        .and_then(|v| v.as_array())
+        .and_then(|images| {
+            // Find 300x300 or take first available
+            images.iter()
+                .find(|img| img.get("width").and_then(|w| w.as_u64()) == Some(300))
+                .or_else(|| images.first())
+                .and_then(|img| img.get("url"))
+                .and_then(|url| url.as_str())
+                .map(|s| s.to_string())
+        });
+
+    // Get duration in milliseconds
+    let duration_ms = json.get("duration_ms")
+        .and_then(|v| v.as_u64());
+
+    println!("[Spotify API] Track: '{}' by '{}' from album '{}' ({}ms)", title, artist, album, duration_ms.unwrap_or(0));
+
+    Ok(SpotifyTrackInfo {
+        title,
+        artist,
+        album,
+        thumbnail,
+        duration_ms,
+    })
+}
+
+// ============================================================================
+// YouTube Quality Search Strategy
+// ============================================================================
+
+/// Quality tier for YouTube sources (higher = better)
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord)]
+enum YouTubeSourceTier {
+    Regular = 0,      // Any result
+    OfficialAudio = 1, // "official audio" in title
+    VEVO = 2,         // VEVO channel
+    Topic = 3,        // Artist - Topic channel (Art Tracks, best quality)
+}
+
+/// YouTube search result with quality info
+#[derive(Debug, Clone)]
+struct YouTubeSearchResult {
     url: String,
-    output_dir: String,
+    title: String,
+    uploader: String,
+    tier: YouTubeSourceTier,
+    audio_bitrate: Option<u32>,
+    duration_secs: Option<u64>,  // Video duration in seconds for verification
+}
+
+/// Analyze a yt-dlp JSON result to determine quality tier
+fn analyze_youtube_result(json: &serde_json::Value) -> Option<YouTubeSearchResult> {
+    let url = json.get("webpage_url")
+        .or_else(|| json.get("url"))
+        .and_then(|v| v.as_str())?
+        .to_string();
+
+    let title = json.get("title")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let uploader = json.get("uploader")
+        .or_else(|| json.get("channel"))
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+
+    let description = json.get("description")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    // Determine quality tier
+    let tier = if uploader.ends_with(" - Topic") {
+        YouTubeSourceTier::Topic
+    } else if uploader.contains("VEVO") || uploader.ends_with("VEVO") {
+        YouTubeSourceTier::VEVO
+    } else if title.to_lowercase().contains("official audio")
+           || title.to_lowercase().contains("official music")
+           || description.contains("Provided to YouTube") {
+        YouTubeSourceTier::OfficialAudio
+    } else {
+        YouTubeSourceTier::Regular
+    };
+
+    // Try to get audio bitrate
+    let audio_bitrate = json.get("abr")
+        .and_then(|v| v.as_f64())
+        .map(|v| v as u32);
+
+    // Get video duration in seconds
+    let duration_secs = json.get("duration")
+        .and_then(|v| v.as_f64())
+        .map(|v| v as u64);
+
+    Some(YouTubeSearchResult {
+        url,
+        title,
+        uploader,
+        tier,
+        audio_bitrate,
+        duration_secs,
+    })
+}
+
+/// Search YouTube with multiple strategies to find the best quality source
+async fn find_best_youtube_source(
+    app: &tauri::AppHandle,
+    artist: &str,
+    title: &str,
+    job_id: &str,
 ) -> Result<String, String> {
     use tauri_plugin_shell::ShellExt;
 
-    // Spawn yt-dlp process
-    let sidecar = app
-        .shell()
-        .sidecar("yt-dlp")
+    // Search queries in priority order
+    // We search for multiple results and pick the best one
+    let search_queries = vec![
+        // Priority 1: Exact match targeting Topic channels (Art Tracks)
+        format!("{} {} topic", artist, title),
+        // Priority 2: Official audio
+        format!("{} {} official audio", artist, title),
+        // Priority 3: Artist + Title (standard)
+        format!("{} {}", artist, title),
+    ];
+
+    let mut best_result: Option<YouTubeSearchResult> = None;
+
+    for (idx, query) in search_queries.iter().enumerate() {
+        let progress = 5.0 + (idx as f32 * 2.0);
+        update_job_status(job_id, DownloadStatus::Downloading, progress,
+            &format!("Searching: {} ({}/{})", query, idx + 1, search_queries.len()));
+        app.emit("queue-update", get_queue_status().ok()).ok();
+
+        println!("[Search] Trying query {}: '{}'", idx + 1, query);
+
+        // Search for 5 results to find the best one
+        let search_url = format!("ytsearch5:{}", query);
+
+        let sidecar = app.shell().sidecar("yt-dlp")
+            .map_err(|e| format!("Failed to get yt-dlp sidecar: {}", e))?;
+
+        let (mut rx, _child) = sidecar
+            .args([
+                "--dump-json",
+                "--no-download",
+                "--flat-playlist",
+                "--no-warnings",
+                &search_url
+            ])
+            .spawn()
+            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+        let mut json_lines = Vec::new();
+        let mut current_line = String::new();
+
+        while let Some(event) = rx.recv().await {
+            match event {
+                tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                    let line_str = String::from_utf8_lossy(&line).to_string();
+                    current_line.push_str(&line_str);
+
+                    // Try to parse complete JSON objects
+                    if current_line.trim().ends_with('}') {
+                        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&current_line) {
+                            json_lines.push(json);
+                        }
+                        current_line.clear();
+                    }
+                }
+                tauri_plugin_shell::process::CommandEvent::Terminated(_) => break,
+                _ => {}
+            }
+        }
+
+        // Analyze results from this search
+        for json in &json_lines {
+            if let Some(result) = analyze_youtube_result(json) {
+                println!("[Search] Found: '{}' by '{}' - Tier: {:?}",
+                    result.title, result.uploader, result.tier);
+
+                // Keep if this is better than what we have
+                let dominated = best_result.as_ref().is_some_and(|best| result.tier <= best.tier);
+                if !dominated {
+                    // Found a Topic channel - this is the best, stop searching
+                    if result.tier == YouTubeSourceTier::Topic {
+                        println!("[Search] Found Topic channel (best quality) - stopping search");
+                        return Ok(result.url);
+                    }
+                    best_result = Some(result);
+                }
+            }
+        }
+
+        // If we found VEVO, that's good enough - no need to try more queries
+        if best_result.as_ref().is_some_and(|r| r.tier == YouTubeSourceTier::VEVO) {
+            println!("[Search] Found VEVO channel - good enough");
+            break;
+        }
+    }
+
+    // Return the best result we found
+    match best_result {
+        Some(result) => {
+            println!("[Search] Best result: '{}' by '{}' (Tier: {:?})",
+                result.title, result.uploader, result.tier);
+            Ok(result.url)
+        }
+        None => {
+            // Fallback: just use first result from basic search
+            println!("[Search] No results found, using fallback");
+            Ok(format!("ytsearch1:{} {}", artist, title))
+        }
+    }
+}
+
+// ============================================================================
+// Apple Music Support (via iTunes Lookup API - no auth needed)
+// ============================================================================
+
+/// Apple Music track metadata
+#[derive(Debug, Clone)]
+struct AppleMusicTrackInfo {
+    title: String,
+    artist: String,
+    album: String,
+    artwork_url: Option<String>,
+}
+
+/// Extract track ID from Apple Music URL
+/// Formats:
+/// - https://music.apple.com/us/album/song-name/1234567890?i=1234567891
+/// - https://music.apple.com/us/song/song-name/1234567891
+fn extract_apple_music_track_id(url: &str) -> Option<String> {
+    // Check for ?i= parameter (song within album)
+    if let Some(pos) = url.find("?i=") {
+        let id_start = pos + 3;
+        let id_end = url[id_start..].find('&').map(|p| id_start + p).unwrap_or(url.len());
+        let id = &url[id_start..id_end];
+        if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+            return Some(id.to_string());
+        }
+    }
+
+    // Check for /song/ URL format
+    if url.contains("/song/") {
+        let parts: Vec<&str> = url.split('/').collect();
+        if let Some(last) = parts.last() {
+            // Remove query string if present
+            let id = last.split('?').next().unwrap_or(last);
+            if !id.is_empty() && id.chars().all(|c| c.is_ascii_digit()) {
+                return Some(id.to_string());
+            }
+        }
+    }
+
+    None
+}
+
+/// Get Apple Music track info using iTunes Lookup API (no authentication required)
+async fn get_apple_music_track_info(url: &str) -> Result<(String, String, Option<AppleMusicTrackInfo>), String> {
+    // Validate URL type
+    let url_lower = url.to_lowercase();
+    if url_lower.contains("/artist/") && !url_lower.contains("?i=") {
+        return Err("Artist pages cannot be downloaded. Please use a specific song URL.".to_string());
+    }
+    if url_lower.contains("/playlist/") {
+        return Err("Playlist pages are not yet supported. Please use individual song URLs.".to_string());
+    }
+
+    // Extract track ID
+    let track_id = extract_apple_music_track_id(url)
+        .ok_or_else(|| "Could not extract track ID from Apple Music URL. Please use a direct song link.".to_string())?;
+
+    println!("[AppleMusic] Extracted track ID: {}", track_id);
+
+    // Use iTunes Lookup API (no authentication required!)
+    let lookup_url = format!("https://itunes.apple.com/lookup?id={}&entity=song", track_id);
+
+    let client = reqwest::Client::new();
+    let response = client
+        .get(&lookup_url)
+        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)")
+        .send()
+        .await
+        .map_err(|e| format!("iTunes API request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("iTunes API error: {}", response.status()));
+    }
+
+    let json: serde_json::Value = response
+        .json()
+        .await
+        .map_err(|e| format!("Failed to parse iTunes response: {}", e))?;
+
+    // iTunes API returns { resultCount: N, results: [...] }
+    let results = json.get("results")
+        .and_then(|v| v.as_array())
+        .ok_or("No results in iTunes response")?;
+
+    if results.is_empty() {
+        return Err("Song not found in iTunes database".to_string());
+    }
+
+    // First result is usually the track
+    let track = &results[0];
+
+    let title = track.get("trackName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown")
+        .to_string();
+
+    let artist = track.get("artistName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown Artist")
+        .to_string();
+
+    let album = track.get("collectionName")
+        .and_then(|v| v.as_str())
+        .unwrap_or("Unknown Album")
+        .to_string();
+
+    // Get artwork URL (replace size for higher quality)
+    let artwork_url = track.get("artworkUrl100")
+        .and_then(|v| v.as_str())
+        .map(|url| url.replace("100x100", "600x600"));
+
+    println!("[AppleMusic] Found: '{}' by '{}' from '{}'", title, artist, album);
+
+    let search_query = format!("{} - {}", artist, title);
+    let info = AppleMusicTrackInfo {
+        title,
+        artist: artist.clone(),
+        album,
+        artwork_url,
+    };
+
+    Ok((search_query, artist, Some(info)))
+}
+
+/// Extract Spotify track info - uses Web API if credentials available, falls back to oEmbed
+async fn get_spotify_track_info(url: &str) -> Result<(String, String, Option<SpotifyTrackInfo>), String> {
+    // Check if this is a track URL (not artist, album, or playlist)
+    let url_lower = url.to_lowercase();
+    if url_lower.contains("/artist/") {
+        return Err("Artist pages cannot be downloaded. Please use a specific track URL.".to_string());
+    }
+    if url_lower.contains("/album/") {
+        return Err("Album pages are not yet supported. Please use individual track URLs.".to_string());
+    }
+    if url_lower.contains("/playlist/") {
+        return Err("Playlist pages are not yet supported. Please use individual track URLs.".to_string());
+    }
+    if !url_lower.contains("/track/") && !url_lower.contains("spotify:track:") {
+        return Err("Please use a Spotify track URL (e.g., open.spotify.com/track/...).".to_string());
+    }
+
+    // Try Spotify Web API first if credentials are configured
+    if SPOTIFY_CLIENT_ID.is_some() && SPOTIFY_CLIENT_SECRET.is_some() {
+        if let Some(track_id) = extract_spotify_track_id(url) {
+            match get_spotify_track_from_api(&track_id).await {
+                Ok(info) => {
+                    // Return search query with artist for better YouTube results
+                    let search_query = format!("{} - {}", info.artist, info.title);
+                    println!("[Spotify] Using Web API - search query: '{}'", search_query);
+                    return Ok((search_query, info.artist.clone(), Some(info)));
+                }
+                Err(e) => {
+                    println!("[Spotify] Web API failed, falling back to oEmbed: {}", e);
+                }
+            }
+        }
+    }
+
+    // Fallback: Scrape the embed page which contains full metadata (artist, duration, etc.)
+    println!("[Spotify] Scraping embed page for metadata (no API credentials configured)");
+
+    let track_id = extract_spotify_track_id(url)
+        .ok_or("Could not extract Spotify track ID")?;
+
+    let embed_url = format!("https://open.spotify.com/embed/track/{}", track_id);
+
+    let client = reqwest::Client::new();
+    let response = client.get(&embed_url)
+        .header("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+        .send()
+        .await
+        .map_err(|e| format!("Failed to fetch Spotify embed page: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Spotify embed page failed with status: {}", response.status()));
+    }
+
+    let html = response.text().await
+        .map_err(|e| format!("Failed to read Spotify embed page: {}", e))?;
+
+    // Extract the JSON data from the page - look for the __NEXT_DATA__ script tag or entity data
+    // The page contains JSON with artists, title, duration etc.
+
+    // Try to find artists array: "artists":[{"name":"Artist Name",...}]
+    let artist = if let Some(artists_start) = html.find("\"artists\":[") {
+        let after_artists = &html[artists_start..];
+        // Find the first artist name
+        if let Some(name_start) = after_artists.find("\"name\":\"") {
+            let name_start_idx = name_start + 8;
+            let after_name = &after_artists[name_start_idx..];
+            if let Some(name_end) = after_name.find("\"") {
+                let artist_name = &after_name[..name_end];
+                // Unescape unicode if needed
+                artist_name.to_string()
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        }
+    } else {
+        String::new()
+    };
+
+    // Extract title from "name":"Track Title" (appears after type:"track")
+    let title = if let Some(name_pattern) = html.find("\"type\":\"track\"") {
+        let after_type = &html[name_pattern..];
+        if let Some(name_start) = after_type.find("\"name\":\"") {
+            let name_start_idx = name_start + 8;
+            let after_name = &after_type[name_start_idx..];
+            if let Some(name_end) = after_name.find("\"") {
+                after_name[..name_end].to_string()
+            } else {
+                String::new()
+            }
+        } else {
+            String::new()
+        }
+    } else {
+        // Fallback: try to get from title tag or other location
+        String::new()
+    };
+
+    // Extract duration: "duration":218100 (in milliseconds)
+    let duration_ms = if let Some(dur_start) = html.find("\"duration\":") {
+        let after_dur = &html[dur_start + 11..];
+        // Find where the number ends
+        let num_str: String = after_dur.chars().take_while(|c| c.is_ascii_digit()).collect();
+        num_str.parse::<u64>().ok()
+    } else {
+        None
+    };
+
+    // Extract album name
+    let album = if let Some(album_start) = html.find("\"album\":{") {
+        let after_album = &html[album_start..];
+        if let Some(name_start) = after_album.find("\"name\":\"") {
+            let name_start_idx = name_start + 8;
+            let after_name = &after_album[name_start_idx..];
+            if let Some(name_end) = after_name.find("\"") {
+                after_name[..name_end].to_string()
+            } else {
+                "Unknown Album".to_string()
+            }
+        } else {
+            "Unknown Album".to_string()
+        }
+    } else {
+        "Unknown Album".to_string()
+    };
+
+    // Validate we got the essential data
+    if artist.is_empty() || title.is_empty() {
+        return Err("Could not extract artist/title from Spotify embed page. The page format may have changed.".to_string());
+    }
+
+    println!("[Spotify Embed] Track: '{}' by '{}' from album '{}' ({}ms)",
+        title, artist, album, duration_ms.unwrap_or(0));
+
+    let search_query = format!("{} - {}", artist, title);
+    let info = SpotifyTrackInfo {
+        title,
+        artist: artist.clone(),
+        album,
+        thumbnail: None,
+        duration_ms,
+    };
+
+    Ok((search_query, artist, Some(info)))
+}
+
+/// Spotify track metadata from spotDL save command with --preload
+#[derive(Debug, Clone, serde::Deserialize)]
+struct SpotDLSongInfo {
+    name: String,
+    artist: String,
+    #[allow(dead_code)]
+    artists: Vec<String>,
+    album_name: String,
+    duration: u64,  // in seconds
+    #[serde(default)]
+    cover_url: Option<String>,
+    #[serde(default)]
+    #[allow(dead_code)]
+    isrc: Option<String>,
+    #[serde(default)]
+    download_url: Option<String>,  // YouTube URL from --preload
+}
+
+/// Download Spotify track using spotDL for metadata + YouTube URL, then our yt-dlp for download
+/// Uses single `spotdl save --preload` command for efficiency:
+/// - Gets Spotify metadata instantly
+/// - Finds YouTube URL via ISRC matching
+/// - Returns both in one JSON output
+async fn download_with_spotdl(
+    app: &AppHandle,
+    url: &str,
+    output_dir: &str,
+    job_id: &str,
+    get_queued_count: impl Fn() -> usize,
+) -> Result<(String, TrackMetadata), String> {
+    use tauri_plugin_shell::ShellExt;
+    use std::fs;
+
+    // Use single spotDL command with --preload to get metadata + YouTube URL
+    update_job_status(job_id, DownloadStatus::Downloading, 2.0, "Looking up Spotify track...");
+    app.emit("queue-update", get_queue_status().ok()).ok();
+    #[cfg(target_os = "macos")]
+    update_floating_panel_status("fetching", 2.0, "Spotify lookup...", get_queued_count());
+
+    let spotdl_sidecar = app.shell().sidecar("spotdl")
+        .map_err(|e| format!("Failed to get spotdl sidecar: {}", e))?;
+
+    // Use --save-file - to output to stdout, --preload to find YouTube URL
+    let (mut rx, _child) = spotdl_sidecar
+        .args(["save", url, "--save-file", "-", "--preload"])
+        .spawn()
+        .map_err(|e| format!("Failed to spawn spotdl: {}", e))?;
+
+    // Collect stdout for JSON parsing, update UI with progress lines
+    let mut json_output = String::new();
+    let mut found_song_name = String::new();
+    let mut in_json = false;
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                let line_str = String::from_utf8_lossy(&line).to_string();
+                println!("[spotdl] {}", line_str);
+
+                // Detect start of JSON array
+                if line_str.trim().starts_with('[') {
+                    in_json = true;
+                }
+
+                if in_json {
+                    json_output.push_str(&line_str);
+                } else {
+                    // Parse progress output for UI updates
+                    #[cfg(target_os = "macos")]
+                    {
+                        if line_str.contains("Processing query") {
+                            update_floating_panel_status("fetching", 3.0, "Getting track info...", get_queued_count());
+                        } else if line_str.contains("Found url for") {
+                            // Extract song name from "Found url for Artist - Title:"
+                            if let Some(start) = line_str.find("Found url for ") {
+                                let rest = &line_str[start + 14..];
+                                if let Some(end) = rest.find(':') {
+                                    found_song_name = rest[..end].trim().to_string();
+                                    update_floating_panel_status("searching", 8.0, &found_song_name, get_queued_count());
+                                }
+                            }
+                        } else if line_str.starts_with("https://") {
+                            update_floating_panel_status("searching", 10.0, "Found match!", get_queued_count());
+                        }
+                    }
+                }
+            }
+            tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
+                let line_str = String::from_utf8_lossy(&line).to_string();
+                eprintln!("[spotdl stderr] {}", line_str);
+
+                #[cfg(target_os = "macos")]
+                {
+                    if line_str.contains("Processing") || line_str.contains("Fetching") {
+                        update_floating_panel_status("fetching", 4.0, "Processing...", get_queued_count());
+                    }
+                }
+            }
+            tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
+                if payload.code != Some(0) {
+                    return Err(format!("spotdl failed with code: {:?}", payload.code));
+                }
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    // Parse JSON output
+    let songs: Vec<SpotDLSongInfo> = serde_json::from_str(&json_output)
+        .map_err(|e| format!("Failed to parse spotdl JSON: {} - output was: {}", e, &json_output[..json_output.len().min(200)]))?;
+
+    let song = songs.into_iter().next()
+        .ok_or("No song found in spotdl output")?;
+
+    println!("[Spotify] Found: '{}' by '{}' from album '{}' ({}s), YouTube: {:?}",
+        song.name, song.artist, song.album_name, song.duration, song.download_url);
+
+    // Update metadata in queue
+    let metadata = TrackMetadata {
+        title: song.name.clone(),
+        artist: song.artist.clone(),
+        album: song.album_name.clone(),
+        duration: Some(song.duration as u32),
+        thumbnail: song.cover_url.clone(),
+    };
+
+    {
+        let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+        if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+            job.metadata = metadata.clone();
+        }
+    }
+    app.emit("queue-update", get_queue_status().ok()).ok();
+
+    #[cfg(target_os = "macos")]
+    update_floating_panel_status("fetching", 12.0, &format!("{} - {}", song.artist, song.name), get_queued_count());
+
+    // Get YouTube URL from spotDL result or fallback to search
+    let youtube_url = if let Some(url) = song.download_url.filter(|u| !u.is_empty()) {
+        println!("[Spotify] Using spotDL ISRC-matched URL: {}", url);
+        url
+    } else {
+        println!("[Spotify] No URL from spotDL, using YouTube search fallback");
+        #[cfg(target_os = "macos")]
+        update_floating_panel_status("searching", 5.0, &format!("Searching: {}", song.name), get_queued_count());
+
+        match find_best_youtube_source(app, &song.artist, &song.name, job_id).await {
+            Ok(url) => url,
+            Err(_) => format!("ytsearch1:{} - {}", song.artist, song.name)
+        }
+    };
+
+    // Step 3: Download using our yt-dlp
+    update_job_status(job_id, DownloadStatus::Downloading, 15.0,
+        &format!("Downloading: {} - {}", song.artist, song.name));
+    app.emit("queue-update", get_queue_status().ok()).ok();
+    #[cfg(target_os = "macos")]
+    update_floating_panel_status("downloading", 15.0, &format!("{} - {}", song.artist, song.name), get_queued_count());
+
+    let ytdlp_sidecar = app.shell().sidecar("yt-dlp")
         .map_err(|e| format!("Failed to get yt-dlp sidecar: {}", e))?;
 
-    let (mut rx, _child) = sidecar
+    // Create output directory: Artist/Album/
+    let output_path = format!("{}/{}/{}", output_dir, song.artist, song.album_name);
+    fs::create_dir_all(&output_path).map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    let output_template = format!("{}/{}.%(ext)s", output_path, song.name);
+
+    let (mut rx, _child) = ytdlp_sidecar
         .args([
-            &url,
+            &youtube_url,
+            "-f", "bestaudio",
             "--extract-audio",
-            "--audio-format",
-            "mp3",
-            "--audio-quality",
-            "0",
+            "--audio-format", "mp3",
+            "--audio-quality", "0",
             "--embed-thumbnail",
             "--add-metadata",
-            "--output",
-            &format!("{}/%(title)s.%(ext)s", output_dir),
+            "--output", &output_template,
             "--progress",
             "--newline",
+            "--no-warnings",
         ])
         .spawn()
         .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
 
-    // Listen to progress
-    let mut output = String::new();
+    let mut last_progress: f32 = 15.0;
+    let mut output_file = String::new();
+
     while let Some(event) = rx.recv().await {
         match event {
             tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
                 let line_str = String::from_utf8_lossy(&line).to_string();
                 println!("[yt-dlp] {}", line_str);
-                output.push_str(&line_str);
-                output.push('\n');
 
-                // Emit progress event to frontend
-                app.emit("download-progress", line_str.clone()).ok();
+                // Parse progress
+                if line_str.contains("[download]") && line_str.contains("%") {
+                    if let Some(pct_str) = line_str.split_whitespace()
+                        .find(|s| s.ends_with('%'))
+                        .map(|s| s.trim_end_matches('%'))
+                    {
+                        if let Ok(pct) = pct_str.parse::<f32>() {
+                            // Scale progress: 15-90%
+                            last_progress = 15.0 + (pct * 0.75);
+                            update_job_status(job_id, DownloadStatus::Downloading, last_progress,
+                                &format!("Downloading: {} - {} ({}%)", song.artist, song.name, pct as u32));
+                            app.emit("queue-update", get_queue_status().ok()).ok();
+
+                            #[cfg(target_os = "macos")]
+                            update_floating_panel_status("downloading", last_progress,
+                                &format!("{} - {}", song.artist, song.name), get_queued_count());
+                        }
+                    }
+                }
+
+                // Check for conversion phase
+                if line_str.contains("[ExtractAudio]") || line_str.contains("[Merger]") {
+                    update_job_status(job_id, DownloadStatus::Converting, 92.0, "Converting to MP3...");
+                    app.emit("queue-update", get_queue_status().ok()).ok();
+
+                    #[cfg(target_os = "macos")]
+                    update_floating_panel_status("converting", 95.0, &song.name, get_queued_count());
+                }
+
+                // Try to get output file path
+                if line_str.contains("Destination:") {
+                    if let Some(path) = line_str.split("Destination:").nth(1) {
+                        output_file = path.trim().to_string();
+                    }
+                }
+
+                app.emit("download-progress", &line_str).ok();
             }
             tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
                 let line_str = String::from_utf8_lossy(&line).to_string();
                 eprintln!("[yt-dlp stderr] {}", line_str);
-            }
-            tauri_plugin_shell::process::CommandEvent::Error(error) => {
-                return Err(format!("yt-dlp error: {}", error));
             }
             tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
                 if payload.code != Some(0) {
@@ -553,25 +1768,490 @@ async fn download_youtube(
         }
     }
 
+    println!("[Spotify] Download complete: {} - {}", song.artist, song.name);
+    Ok((output_file, metadata))
+}
+
+/// Process a single download job
+async fn process_download_job(app: &AppHandle, job_id: String, base_output_dir: String) -> Result<String, String> {
+    use tauri_plugin_shell::ShellExt;
+
+    // Get job details
+    let (url, service, initial_title) = {
+        let queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let job = queue.iter().find(|j| j.id == job_id).ok_or("Job not found")?;
+        (job.url.clone(), job.service.clone(), job.metadata.title.clone())
+    };
+
+    // Helper to get queued count for floating panel
+    let get_queued_count = || -> usize {
+        DOWNLOAD_QUEUE.lock().map(|q| q.iter().filter(|j| j.status == DownloadStatus::Queued).count()).unwrap_or(0)
+    };
+
+    // Update job to downloading
+    update_job_status(&job_id, DownloadStatus::Downloading, 0.0, "Starting download...");
+    if let Ok(mut queue) = DOWNLOAD_QUEUE.lock() {
+        if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+            job.started_at = Some(chrono::Utc::now().timestamp());
+        }
+    }
+
+    // Emit status update
+    app.emit("queue-update", get_queue_status().ok()).ok();
+
+    // Update floating panel with initial status
+    #[cfg(target_os = "macos")]
+    update_floating_panel_status("fetching", 1.0, &initial_title, get_queued_count());
+
+    println!("[Download] Starting {} download for job {}", service.display_name(), job_id);
+
+    // ========================================================================
+    // SPOTIFY: Use spotDL for accurate song matching (ISRC + duration + artist)
+    // ========================================================================
+    if service == MusicService::Spotify {
+        println!("[Spotify] Using spotDL for accurate matching");
+
+        match download_with_spotdl(app, &url, &base_output_dir, &job_id, get_queued_count).await {
+            Ok((_file_path, metadata)) => {
+                // Update job with metadata from spotDL
+                {
+                    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+                    if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+                        job.metadata = metadata.clone();
+                        job.completed_at = Some(chrono::Utc::now().timestamp());
+                    }
+                }
+
+                // Mark as complete
+                update_job_status(&job_id, DownloadStatus::Complete, 100.0, "Download complete!");
+                app.emit("queue-update", get_queue_status().ok()).ok();
+
+                // Update floating panel
+                #[cfg(target_os = "macos")]
+                update_floating_panel_status("complete", 100.0, "Done!", get_queued_count());
+
+                return Ok("Download complete".to_string());
+            }
+            Err(e) => {
+                println!("[Spotify] spotDL failed: {}", e);
+                update_job_status(&job_id, DownloadStatus::Error, 0.0, &e);
+                if let Ok(mut queue) = DOWNLOAD_QUEUE.lock() {
+                    if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+                        job.error = Some(e.clone());
+                    }
+                }
+                app.emit("queue-update", get_queue_status().ok()).ok();
+
+                #[cfg(target_os = "macos")]
+                update_floating_panel_status("error", 0.0, "Error", get_queued_count());
+
+                return Err(e);
+            }
+        }
+    }
+
+    // ========================================================================
+    // OTHER SERVICES: Use yt-dlp with YouTube search
+    // ========================================================================
+
+    // For Apple Music: Get track info and search YouTube for best quality source
+    // Store metadata if available for folder structure
+    let mut apple_music_metadata: Option<AppleMusicTrackInfo> = None;
+
+    let download_url = if service == MusicService::AppleMusic {
+        // Apple Music: Use iTunes Lookup API to get metadata, then search YouTube
+        update_job_status(&job_id, DownloadStatus::Downloading, 2.0, "Fetching Apple Music track info...");
+        app.emit("queue-update", get_queue_status().ok()).ok();
+        #[cfg(target_os = "macos")]
+        update_floating_panel_status("fetching", 2.0, "Getting Apple Music info...", get_queued_count());
+
+        match get_apple_music_track_info(&url).await {
+            Ok((_search_query_base, _artist, apple_info)) => {
+                // Store Apple Music metadata for later use
+                apple_music_metadata = apple_info.clone();
+
+                // Use multi-tier search to find the best quality YouTube source
+                let (artist, title) = if let Some(ref info) = apple_info {
+                    (info.artist.clone(), info.title.clone())
+                } else {
+                    // Parse from search query base (format: "Artist - Title")
+                    let parts: Vec<&str> = _search_query_base.splitn(2, " - ").collect();
+                    if parts.len() == 2 {
+                        (parts[0].to_string(), parts[1].to_string())
+                    } else {
+                        ("".to_string(), _search_query_base.clone())
+                    }
+                };
+
+                println!("[AppleMusic] Finding best YouTube source for: {} - {}", artist, title);
+                update_job_status(&job_id, DownloadStatus::Downloading, 3.0,
+                    &format!("Finding best quality: {} - {}", artist, title));
+                app.emit("queue-update", get_queue_status().ok()).ok();
+                #[cfg(target_os = "macos")]
+                update_floating_panel_status("searching", 3.0, &format!("{} - {}", artist, title), get_queued_count());
+
+                // Use the multi-tier search strategy
+                match find_best_youtube_source(app, &artist, &title, &job_id).await {
+                    Ok(best_url) => {
+                        println!("[AppleMusic] Best source found: {}", best_url);
+                        best_url
+                    }
+                    Err(e) => {
+                        println!("[AppleMusic] Search failed, using fallback: {}", e);
+                        format!("ytsearch1:{} {}", artist, title)
+                    }
+                }
+            }
+            Err(e) => {
+                println!("[AppleMusic] Failed to get track info: {}", e);
+                return Err(e);
+            }
+        }
+    } else {
+        url.clone()
+    };
+
+    // Get metadata - use Spotify/Apple Music API data if available, otherwise use yt-dlp
+    let metadata = {
+        update_job_status(&job_id, DownloadStatus::Downloading, 8.0, "Fetching metadata...");
+        app.emit("queue-update", get_queue_status().ok()).ok();
+
+        // Use service-specific metadata if available (from API lookups)
+        // Note: Spotify is handled separately by spotDL, so this branch is for other services
+        let meta = if let Some(ref apple_info) = apple_music_metadata {
+            // Use Apple Music metadata from iTunes API
+            println!("[Metadata] Using Apple Music/iTunes API metadata");
+            TrackMetadata {
+                title: apple_info.title.clone(),
+                artist: apple_info.artist.clone(),
+                album: apple_info.album.clone(),
+                duration: None,
+                thumbnail: apple_info.artwork_url.clone(),
+            }
+        } else {
+            // Fallback: get metadata from yt-dlp
+            let sidecar = app.shell().sidecar("yt-dlp")
+                .map_err(|e| format!("Failed to get yt-dlp sidecar: {}", e))?;
+
+            let (mut rx, _child) = sidecar
+                .args(["--dump-json", "--no-download", &download_url])
+                .spawn()
+                .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+            let mut json_output = String::new();
+            while let Some(event) = rx.recv().await {
+                match event {
+                    tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                        json_output.push_str(&String::from_utf8_lossy(&line));
+                    }
+                    tauri_plugin_shell::process::CommandEvent::Terminated(_) => break,
+                    _ => {}
+                }
+            }
+
+            let mut yt_meta = parse_ytdlp_metadata(&json_output);
+
+            // For Spotify without API credentials, try to extract artist from video title (format: "Artist - Song")
+            if service == MusicService::Spotify && yt_meta.artist == "Unknown Artist" {
+                if let Some(dash_pos) = yt_meta.title.find(" - ") {
+                    let artist = yt_meta.title[..dash_pos].trim().to_string();
+                    let title = yt_meta.title[dash_pos + 3..].trim().to_string();
+                    if !artist.is_empty() {
+                        yt_meta.artist = artist;
+                        yt_meta.title = title;
+                    }
+                }
+            }
+
+            yt_meta
+        };
+
+        // Update job with metadata
+        {
+            let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+            if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+                job.metadata = meta.clone();
+            }
+        }
+
+        // Emit queue update so UI shows the resolved song name
+        app.emit("queue-update", get_queue_status().ok()).ok();
+
+        // Update floating panel with resolved title
+        #[cfg(target_os = "macos")]
+        {
+            let display_title = if meta.artist.is_empty() {
+                meta.title.clone()
+            } else {
+                format!("{} - {}", meta.artist, meta.title)
+            };
+            update_floating_panel_status("downloading", 10.0, &display_title, get_queued_count());
+        }
+
+        println!("[Metadata] Title: '{}', Artist: '{}', Album: '{}'", meta.title, meta.artist, meta.album);
+        meta
+    };
+
+    // Calculate output path based on metadata
+    let output_path = get_organized_output_path(&base_output_dir, &metadata);
+    let output_dir = output_path.parent().unwrap().to_string_lossy().to_string();
+
+    // Ensure output directory exists
+    fs::create_dir_all(&output_dir).map_err(|e| format!("Failed to create directory: {}", e))?;
+
+    // Build yt-dlp command with BEST QUALITY settings
+    let sidecar = app.shell().sidecar("yt-dlp")
+        .map_err(|e| format!("Failed to get yt-dlp sidecar: {}", e))?;
+
+    let output_template = format!("{}/%(title)s.%(ext)s", output_dir);
+
+    // Best quality audio flags:
+    // -f bestaudio: Select the highest quality audio stream
+    // --audio-quality 0: Best VBR quality when converting to MP3
+    // --prefer-free-formats: Prefer opus/vorbis (often better quality)
+    let args: Vec<&str> = match service {
+        MusicService::YouTube | MusicService::SoundCloud | MusicService::Bandcamp => {
+            vec![
+                &download_url,
+                "-f", "bestaudio",           // Select best audio stream
+                "--extract-audio",
+                "--audio-format", "mp3",
+                "--audio-quality", "0",      // Best VBR quality (320kbps equivalent)
+                "--prefer-free-formats",     // Prefer opus/vorbis source
+                "--embed-thumbnail",
+                "--add-metadata",
+                "--output", &output_template,
+                "--progress",
+                "--newline",
+                "--no-warnings",
+            ]
+        }
+        MusicService::AppleMusic => {
+            // For Apple Music: download_url is the best YouTube URL found via search
+            vec![
+                &download_url,
+                "-f", "bestaudio",           // Select best audio stream
+                "--extract-audio",
+                "--audio-format", "mp3",
+                "--audio-quality", "0",      // Best VBR quality (320kbps equivalent)
+                "--prefer-free-formats",     // Prefer opus/vorbis source
+                "--embed-thumbnail",
+                "--add-metadata",
+                "--output", &output_template,
+                "--progress",
+                "--newline",
+                "--no-warnings",
+            ]
+        }
+        _ => {
+            // Default: try direct download with yt-dlp (supports many sites)
+            vec![
+                &download_url,
+                "-f", "bestaudio",           // Select best audio stream
+                "--extract-audio",
+                "--audio-format", "mp3",
+                "--audio-quality", "0",      // Best VBR quality (320kbps equivalent)
+                "--prefer-free-formats",     // Prefer opus/vorbis source
+                "--embed-thumbnail",
+                "--add-metadata",
+                "--output", &output_template,
+                "--progress",
+                "--newline",
+                "--no-warnings",
+            ]
+        }
+    };
+
+    let (mut rx, _child) = sidecar
+        .args(args)
+        .spawn()
+        .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+    update_job_status(&job_id, DownloadStatus::Downloading, 5.0, "Downloading...");
+
+    // Listen to progress
+    let mut output = String::new();
+    let mut last_progress: f32 = 5.0;
+    let track_title = metadata.title.clone();
+
+    while let Some(event) = rx.recv().await {
+        match event {
+            tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                let line_str = String::from_utf8_lossy(&line).to_string();
+                println!("[yt-dlp] {}", line_str);
+                output.push_str(&line_str);
+                output.push('\n');
+
+                // Parse progress
+                if let Some(pct) = parse_ytdlp_progress(&line_str) {
+                    last_progress = pct * 0.9; // Scale to 90% (leave 10% for conversion)
+                    update_job_status(&job_id, DownloadStatus::Downloading, last_progress, &format!("Downloading... {:.1}%", pct));
+
+                    // Update floating panel
+                    #[cfg(target_os = "macos")]
+                    update_floating_panel_status("downloading", pct, &track_title, get_queued_count());
+                }
+
+                // Check for conversion phase
+                if line_str.contains("[ExtractAudio]") || line_str.contains("[Merger]") {
+                    update_job_status(&job_id, DownloadStatus::Converting, 92.0, "Converting to MP3...");
+
+                    // Update floating panel
+                    #[cfg(target_os = "macos")]
+                    update_floating_panel_status("converting", 95.0, &track_title, get_queued_count());
+                }
+
+                // Emit progress event to frontend
+                app.emit("download-progress", &line_str).ok();
+                app.emit("queue-update", get_queue_status().ok()).ok();
+            }
+            tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
+                let line_str = String::from_utf8_lossy(&line).to_string();
+                eprintln!("[yt-dlp stderr] {}", line_str);
+
+                // Some "errors" are actually warnings, emit them
+                if !line_str.contains("WARNING") {
+                    app.emit("download-progress", &format!("⚠️ {}", line_str)).ok();
+                }
+            }
+            tauri_plugin_shell::process::CommandEvent::Error(error) => {
+                update_job_status(&job_id, DownloadStatus::Error, last_progress, &format!("Error: {}", error));
+                if let Ok(mut queue) = DOWNLOAD_QUEUE.lock() {
+                    if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+                        job.error = Some(error.clone());
+                    }
+                }
+                app.emit("queue-update", get_queue_status().ok()).ok();
+
+                // Update floating panel with error
+                #[cfg(target_os = "macos")]
+                update_floating_panel_status("error", 0.0, "Error", get_queued_count());
+
+                return Err(format!("yt-dlp error: {}", error));
+            }
+            tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
+                if payload.code != Some(0) {
+                    let error_msg = format!("yt-dlp exited with code: {:?}", payload.code);
+                    update_job_status(&job_id, DownloadStatus::Error, last_progress, &error_msg);
+                    if let Ok(mut queue) = DOWNLOAD_QUEUE.lock() {
+                        if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+                            job.error = Some(error_msg.clone());
+                        }
+                    }
+                    app.emit("queue-update", get_queue_status().ok()).ok();
+
+                    // Update floating panel with error
+                    #[cfg(target_os = "macos")]
+                    update_floating_panel_status("error", 0.0, "Error", get_queued_count());
+
+                    return Err(error_msg);
+                }
+                break;
+            }
+            _ => {}
+        }
+    }
+
+    // Mark as complete
+    update_job_status(&job_id, DownloadStatus::Complete, 100.0, "Download complete!");
+    {
+        let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+        if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+            job.completed_at = Some(chrono::Utc::now().timestamp());
+            job.output_path = Some(output_path.to_string_lossy().to_string());
+        }
+    }
+
+    app.emit("queue-update", get_queue_status().ok()).ok();
+
+    // Update floating panel with complete status
+    #[cfg(target_os = "macos")]
+    update_floating_panel_status("complete", 100.0, "Done!", get_queued_count());
+
     Ok("Download complete".to_string())
 }
 
+/// Start processing the download queue
+#[tauri::command]
+async fn start_queue_processing(app: AppHandle) -> Result<(), String> {
+    // Check if already processing
+    {
+        let mut processing = QUEUE_PROCESSING.lock().map_err(|e| format!("Lock error: {}", e))?;
+        if *processing {
+            println!("[Queue] Already processing");
+            return Ok(());
+        }
+        *processing = true;
+    }
+
+    let base_output_dir = get_download_dir();
+    fs::create_dir_all(&base_output_dir).ok();
+
+    println!("[Queue] Starting queue processing");
+    app.emit("queue-update", get_queue_status().ok()).ok();
+
+    // Process queue
+    loop {
+        // Find next queued job
+        let next_job_id = {
+            let queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+            queue.iter()
+                .find(|j| j.status == DownloadStatus::Queued)
+                .map(|j| j.id.clone())
+        };
+
+        match next_job_id {
+            Some(job_id) => {
+                println!("[Queue] Processing job: {}", job_id);
+                match process_download_job(&app, job_id.clone(), base_output_dir.clone()).await {
+                    Ok(_) => println!("[Queue] Job {} completed successfully", job_id),
+                    Err(e) => println!("[Queue] Job {} failed: {}", job_id, e),
+                }
+            }
+            None => {
+                // No more jobs
+                println!("[Queue] No more jobs to process");
+                break;
+            }
+        }
+    }
+
+    // Mark processing as complete
+    {
+        let mut processing = QUEUE_PROCESSING.lock().map_err(|e| format!("Lock error: {}", e))?;
+        *processing = false;
+    }
+
+    app.emit("queue-update", get_queue_status().ok()).ok();
+    println!("[Queue] Queue processing complete");
+
+    Ok(())
+}
+
+/// Legacy download_youtube command - now uses queue
+#[tauri::command]
+async fn download_youtube(
+    app: AppHandle,
+    url: String,
+    output_dir: String,
+) -> Result<String, String> {
+    // Add to queue and start processing
+    let job = add_to_queue(url)?;
+    start_queue_processing(app).await?;
+    Ok(format!("Added to queue: {}", job.id))
+}
+
+/// Legacy download_spotify command - now uses queue
 #[tauri::command]
 async fn download_spotify(
-    _app: AppHandle,
+    app: AppHandle,
     url: String,
     _output_dir: String,
 ) -> Result<String, String> {
-    // For Spotify, we'll use yt-dlp with search
-    // spotdl is Python-based, so we'll use yt-dlp with ytsearch prefix
-    // In production, you might want to:
-    // 1. Call Spotify API to get track info
-    // 2. Search YouTube for "artist - title"
-    // 3. Download from YouTube
-
-    // For now, simple implementation:
-    // Extract track name from Spotify URL via API, then search YouTube
-    Ok(format!("Spotify download not yet implemented. URL: {}", url))
+    // Add to queue and start processing (Spotify is now supported via yt-dlp)
+    let job = add_to_queue(url)?;
+    start_queue_processing(app).await?;
+    Ok(format!("Added to queue: {}", job.id))
 }
 
 #[tauri::command]
@@ -1137,6 +2817,7 @@ fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
                 }
                 drop(panel_guard);
                 *FLOATING_PANEL.lock().map_err(|e| format!("Lock error: {}", e))? = None;
+                *FLOATING_WEBVIEW.lock().map_err(|e| format!("Lock error: {}", e))? = None;
                 *FLOATING_APP_HANDLE.lock().map_err(|e| format!("Lock error: {}", e))? = None;
                 println!("[FloatingPanel] Closed existing panel");
                 return Ok(());
@@ -1149,8 +2830,8 @@ fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
             // NSWindowStyleMaskNonactivatingPanel = 1 << 7 = 128
             let style_mask: u64 = 0 | (1 << 7); // Borderless + NonactivatingPanel
 
-            // Create frame
-            let frame = NSRect::new(NSPoint::new(100.0, 100.0), NSSize::new(90.0, 90.0));
+            // Create frame (1.5x size: 135x135)
+            let frame = NSRect::new(NSPoint::new(100.0, 100.0), NSSize::new(135.0, 135.0));
 
             // Create NSPanel (not NSWindow!)
             let panel_class = class!(NSPanel);
@@ -1238,7 +2919,7 @@ fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
             // Note: We don't actually need native drag registration for HTML5 drag-drop
             // The WKWebView handles it via JavaScript
 
-            // Create inline HTML for the drop zone button with drag support
+            // Create inline HTML for the drop zone with cool animations and status
             let html_content = r#"
 <!DOCTYPE html>
 <html>
@@ -1252,38 +2933,313 @@ fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
             overflow: hidden;
             -webkit-user-select: none;
             user-select: none;
-        }
-        .drop-zone {
-            width: 90px; height: 90px;
-            border-radius: 50%;
-            background: linear-gradient(180deg, #667eea 0%, #764ba2 100%);
             display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            position: relative;
+            width: 135px;
+            height: 135px;
+        }
+
+        /* Rotating gradient ring */
+        .ring {
+            position: absolute;
+            width: 135px;
+            height: 135px;
+            border-radius: 50%;
+            background: conic-gradient(
+                from 0deg,
+                #667eea, #764ba2, #f093fb, #f5576c,
+                #4facfe, #00f2fe, #43e97b, #667eea
+            );
+            animation: rotate 8s linear infinite;
+            opacity: 0.9;
+        }
+
+        .ring::before {
+            content: '';
+            position: absolute;
+            inset: 6px;
+            border-radius: 50%;
+            background: rgba(20, 20, 35, 0.95);
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Inner content circle */
+        .drop-zone {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 115px;
+            height: 115px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(60,60,80,0.9), rgba(20,20,35,0.95));
+            display: flex;
+            flex-direction: column;
             align-items: center;
             justify-content: center;
             color: white;
             font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            cursor: grab;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .drop-zone:active { cursor: grabbing; }
+
+        .status-icon {
+            font-size: 28px;
+            margin-bottom: 4px;
+            transition: transform 0.3s ease;
+        }
+
+        .status-text {
             font-size: 11px;
             font-weight: 600;
             text-align: center;
-            cursor: grab;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            transition: transform 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+            line-height: 1.3;
+            opacity: 0.9;
         }
-        .drop-zone:active { cursor: grabbing; }
-        .drop-zone.drag-over {
-            background: linear-gradient(180deg, #2ecc71 0%, #27ae60 100%);
-            transform: scale(1.1);
+
+        .queue-badge {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            min-width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, #f5576c, #f093fb);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: white;
+            box-shadow: 0 2px 8px rgba(245,87,108,0.5);
+            opacity: 0;
+            transform: scale(0);
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 20;
+        }
+
+        .queue-badge.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* State: Idle */
+        .container.idle .ring {
+            animation-duration: 8s;
+            opacity: 0.7;
+        }
+
+        /* State: Drag Over */
+        .container.drag-over .ring {
+            animation-duration: 1s;
+            opacity: 1;
+            background: conic-gradient(
+                from 0deg,
+                #43e97b, #38f9d7, #43e97b, #38f9d7,
+                #43e97b, #38f9d7, #43e97b, #38f9d7
+            );
+        }
+        .container.drag-over .drop-zone {
+            transform: translate(-50%, -50%) scale(1.05);
+            background: radial-gradient(circle at 30% 30%, rgba(67,233,123,0.3), rgba(20,20,35,0.95));
+        }
+
+        /* State: Downloading */
+        .container.downloading .ring {
+            animation-duration: 2s;
+            opacity: 1;
+            background: conic-gradient(
+                from 0deg,
+                #4facfe, #00f2fe, #4facfe, #00f2fe,
+                #4facfe, #00f2fe, #4facfe, #00f2fe
+            );
+        }
+        .container.downloading .status-icon {
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        /* State: Complete */
+        .container.complete .ring {
+            animation-duration: 4s;
+            background: conic-gradient(
+                from 0deg,
+                #43e97b, #38f9d7, #43e97b, #38f9d7,
+                #43e97b, #38f9d7, #43e97b, #38f9d7
+            );
+        }
+
+        /* State: Error */
+        .container.error .ring {
+            animation-duration: 0.5s;
+            background: conic-gradient(
+                from 0deg,
+                #f5576c, #f093fb, #f5576c, #f093fb,
+                #f5576c, #f093fb, #f5576c, #f093fb
+            );
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        /* Progress ring */
+        .progress-ring {
+            position: absolute;
+            width: 135px;
+            height: 135px;
+            transform: rotate(-90deg);
+            z-index: 5;
+        }
+
+        .progress-ring circle {
+            fill: none;
+            stroke-width: 4;
+            stroke-linecap: round;
+        }
+
+        .progress-ring .bg {
+            stroke: rgba(255,255,255,0.1);
+        }
+
+        .progress-ring .progress {
+            stroke: url(#progressGradient);
+            stroke-dasharray: 408;
+            stroke-dashoffset: 408;
+            transition: stroke-dashoffset 0.3s ease;
         }
     </style>
 </head>
 <body>
-    <div class="drop-zone" id="dropZone">Drop<br>URL<br>Here</div>
+    <div class="container idle" id="container">
+        <div class="ring"></div>
+        <svg class="progress-ring" viewBox="0 0 135 135">
+            <defs>
+                <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:#4facfe"/>
+                    <stop offset="100%" style="stop-color:#00f2fe"/>
+                </linearGradient>
+            </defs>
+            <circle class="bg" cx="67.5" cy="67.5" r="65"/>
+            <circle class="progress" id="progressCircle" cx="67.5" cy="67.5" r="65"/>
+        </svg>
+        <div class="drop-zone" id="dropZone">
+            <div class="status-icon" id="statusIcon">🎵</div>
+            <div class="status-text" id="statusText">Drop URL<br>Here</div>
+        </div>
+        <div class="queue-badge" id="queueBadge">0</div>
+    </div>
+
     <script>
+        const container = document.getElementById('container');
         const dropZone = document.getElementById('dropZone');
+        const statusIcon = document.getElementById('statusIcon');
+        const statusText = document.getElementById('statusText');
+        const queueBadge = document.getElementById('queueBadge');
+        const progressCircle = document.getElementById('progressCircle');
+
         let isDragging = false;
         let lastX = 0, lastY = 0;
+        let currentState = 'idle';
+        let queueCount = 0;
+        let currentProgress = 0;
 
-        // Window dragging via mouse events
+        // State management
+        function setState(state, data = {}) {
+            container.className = 'container ' + state;
+            currentState = state;
+
+            switch(state) {
+                case 'idle':
+                    statusIcon.textContent = '🎵';
+                    statusText.innerHTML = 'Drop URL<br>Here';
+                    setProgress(0);
+                    break;
+                case 'drag-over':
+                    statusIcon.textContent = '📥';
+                    statusText.innerHTML = 'Drop to<br>Download';
+                    break;
+                case 'processing':
+                    statusIcon.textContent = '⏳';
+                    const procTitle = data.title || 'Processing...';
+                    statusText.innerHTML = truncate(procTitle, 14) + '<br>Please wait...';
+                    setProgress(0);
+                    break;
+                case 'fetching':
+                    statusIcon.textContent = '🔍';
+                    const fetchTitle = data.title || 'Fetching...';
+                    statusText.innerHTML = truncate(fetchTitle, 12) + '<br>Loading...';
+                    setProgress(data.progress || 2);
+                    break;
+                case 'searching':
+                    statusIcon.textContent = '🎯';
+                    const searchTitle = data.title || 'Searching...';
+                    statusText.innerHTML = truncate(searchTitle, 12) + '<br>Finding...';
+                    setProgress(data.progress || 5);
+                    break;
+                case 'downloading':
+                    statusIcon.textContent = '⬇️';
+                    const progress = data.progress || 0;
+                    const title = data.title || 'Downloading...';
+                    statusText.innerHTML = truncate(title, 12) + '<br>' + Math.round(progress) + '%';
+                    setProgress(progress);
+                    break;
+                case 'converting':
+                    statusIcon.textContent = '🔄';
+                    statusText.innerHTML = 'Converting<br>to MP3...';
+                    setProgress(95);
+                    break;
+                case 'complete':
+                    statusIcon.textContent = '✅';
+                    statusText.innerHTML = 'Done!';
+                    setProgress(100);
+                    setTimeout(() => {
+                        if (queueCount === 0) setState('idle');
+                    }, 2000);
+                    break;
+                case 'error':
+                    statusIcon.textContent = '❌';
+                    statusText.innerHTML = 'Error';
+                    setTimeout(() => setState('idle'), 3000);
+                    break;
+                case 'queued':
+                    statusIcon.textContent = '📋';
+                    statusText.innerHTML = queueCount + ' in<br>Queue';
+                    break;
+            }
+        }
+
+        function setProgress(percent) {
+            const circumference = 2 * Math.PI * 65;
+            const offset = circumference - (percent / 100) * circumference;
+            progressCircle.style.strokeDashoffset = offset;
+            currentProgress = percent;
+        }
+
+        function updateQueueBadge(count) {
+            queueCount = count;
+            queueBadge.textContent = count;
+            queueBadge.classList.toggle('visible', count > 0);
+        }
+
+        function truncate(str, len) {
+            if (str.length <= len) return str;
+            return str.substring(0, len) + '...';
+        }
+
+        // Window dragging
         dropZone.addEventListener('mousedown', (e) => {
             if (e.button === 0) {
                 isDragging = true;
@@ -1311,7 +3267,7 @@ fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
         document.addEventListener('dragenter', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (!isDragging) dropZone.classList.add('drag-over');
+            if (!isDragging) setState('drag-over');
         });
 
         document.addEventListener('dragover', (e) => {
@@ -1320,13 +3276,14 @@ fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
         });
 
         document.addEventListener('dragleave', (e) => {
-            if (e.relatedTarget === null) dropZone.classList.remove('drag-over');
+            if (e.relatedTarget === null && currentState === 'drag-over') {
+                setState(queueCount > 0 ? 'queued' : 'idle');
+            }
         });
 
         document.addEventListener('drop', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            dropZone.classList.remove('drag-over');
 
             let url = '';
             if (e.dataTransfer.types.includes('text/uri-list')) {
@@ -1340,14 +3297,27 @@ fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
                 url = url.trim();
             }
 
-            if (url && (url.startsWith('http://') || url.startsWith('https://'))) {
-                dropZone.textContent = '✓';
-                setTimeout(() => { dropZone.innerHTML = 'Drop<br>URL<br>Here'; }, 1000);
+            if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('spotify:'))) {
+                statusIcon.textContent = '✨';
+                statusText.innerHTML = 'Added!';
+                // Don't reset - let the Rust backend control the status from here
                 if (window.webkit?.messageHandlers?.urlDropped) {
                     window.webkit.messageHandlers.urlDropped.postMessage(url);
                 }
+            } else {
+                setState('error');
             }
         });
+
+        // Expose update function for native code
+        window.updateStatus = function(data) {
+            if (data.queueCount !== undefined) {
+                updateQueueBadge(data.queueCount);
+            }
+            if (data.state) {
+                setState(data.state, data);
+            }
+        };
     </script>
 </body>
 </html>
@@ -1358,11 +3328,11 @@ fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
             let base_url: id = nil;
             let _: () = msg_send![webview, loadHTMLString:html_nsstring baseURL:base_url];
 
-            // Position panel in top-right corner
+            // Position panel in top-right corner (adjusted for 135x135 size)
             let screen: id = msg_send![class!(NSScreen), mainScreen];
             let screen_frame: NSRect = msg_send![screen, frame];
-            let x = screen_frame.size.width - 110.0;
-            let y = screen_frame.size.height - 150.0;
+            let x = screen_frame.size.width - 155.0;
+            let y = screen_frame.size.height - 175.0;
             let origin = NSPoint::new(x, y);
             let _: () = msg_send![panel, setFrameOrigin: origin];
 
@@ -1388,8 +3358,9 @@ fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
                 println!("[FloatingPanel] Level after retry: {}", level2);
             }
 
-            // Store panel reference as usize
+            // Store panel and webview references (as usize for thread safety)
             *FLOATING_PANEL.lock().map_err(|e| format!("Lock error: {}", e))? = Some(panel as usize);
+            *FLOATING_WEBVIEW.lock().map_err(|e| format!("Lock error: {}", e))? = Some(webview as usize);
 
             println!("[FloatingPanel] Native NSPanel created with WKWebView - should appear above fullscreen apps!");
         }
@@ -1421,6 +3392,39 @@ fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
             .map_err(|e| format!("Failed to create window: {}", e))?;
 
         Ok(())
+    }
+}
+
+// Store webview reference for status updates
+#[cfg(target_os = "macos")]
+static FLOATING_WEBVIEW: std::sync::LazyLock<Mutex<Option<usize>>> =
+    std::sync::LazyLock::new(|| Mutex::new(None));
+
+/// Update the floating panel status (call JavaScript in webview)
+#[cfg(target_os = "macos")]
+fn update_floating_panel_status(state: &str, progress: f32, title: &str, queue_count: usize) {
+    use cocoa::base::{id, nil};
+    use cocoa::foundation::NSString;
+    #[allow(unused_imports)]
+    use objc::{msg_send, sel, sel_impl};
+
+    // Get the webview from stored reference
+    if let Ok(webview_guard) = FLOATING_WEBVIEW.lock() {
+        if let Some(webview_ptr) = *webview_guard {
+            let webview = webview_ptr as id;
+            unsafe {
+                // Create JavaScript to call window.updateStatus
+                let js = format!(
+                    r#"window.updateStatus({{state:'{}',progress:{},title:'{}',queueCount:{}}})"#,
+                    state,
+                    progress,
+                    title.replace("'", "\\'"),
+                    queue_count
+                );
+                let js_string = NSString::alloc(nil).init_str(&js);
+                let _: () = msg_send![webview, evaluateJavaScript:js_string completionHandler:nil];
+            }
+        }
     }
 }
 
@@ -1568,11 +3572,18 @@ pub fn run() {
             get_registration_url,
             set_auth_token,
             check_license,
-            // Download commands
+            // Download commands (legacy - now use queue)
             download_youtube,
             download_spotify,
             get_download_dir,
             create_download_dir,
+            // Queue management commands
+            add_to_queue,
+            add_multiple_to_queue,
+            get_queue_status,
+            clear_completed_jobs,
+            remove_from_queue,
+            start_queue_processing,
             // OAuth 2.0 commands
             get_hardware_device_id,
             start_google_login,

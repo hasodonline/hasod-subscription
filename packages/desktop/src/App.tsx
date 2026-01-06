@@ -26,6 +26,51 @@ interface OAuthStartResult {
   state: string;
 }
 
+// Queue types matching Rust backend
+interface TrackMetadata {
+  title: string;
+  artist: string;
+  album: string;
+  duration?: number;
+  thumbnail?: string;
+}
+
+interface DownloadJob {
+  id: string;
+  url: string;
+  service: string;
+  status: string;
+  progress: number;
+  message: string;
+  metadata: TrackMetadata;
+  output_path?: string;
+  created_at: number;
+  started_at?: number;
+  completed_at?: number;
+  error?: string;
+}
+
+interface QueueStatus {
+  jobs: DownloadJob[];
+  active_count: number;
+  queued_count: number;
+  completed_count: number;
+  error_count: number;
+  is_processing: boolean;
+}
+
+// Service icons and colors
+const serviceStyles: Record<string, { icon: string; color: string; name: string }> = {
+  YouTube: { icon: '🎬', color: '#FF0000', name: 'YouTube' },
+  Spotify: { icon: '🟢', color: '#1DB954', name: 'Spotify' },
+  SoundCloud: { icon: '🟠', color: '#FF5500', name: 'SoundCloud' },
+  Deezer: { icon: '🟣', color: '#A238FF', name: 'Deezer' },
+  Tidal: { icon: '🔵', color: '#00FFFF', name: 'Tidal' },
+  AppleMusic: { icon: '🍎', color: '#FA2D48', name: 'Apple Music' },
+  Bandcamp: { icon: '🎵', color: '#629AA9', name: 'Bandcamp' },
+  Unknown: { icon: '❓', color: '#667eea', name: 'Unknown' },
+};
+
 function App() {
   const [activeTab, setActiveTab] = useState<'download' | 'license'>('license');
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
@@ -35,13 +80,25 @@ function App() {
   const [loginMessage, setLoginMessage] = useState('');
   const [downloadUrl, setDownloadUrl] = useState('');
   const [downloadProgress, setDownloadProgress] = useState('');
-  const [downloading, setDownloading] = useState(false);
-  const [floatingOpen, setFloatingOpen] = useState(false);
+  const [floatingOpen, setFloatingOpen] = useState(true);  // Default: on
+  const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
+
+  // Open floating window on app start
+  const openFloatingWindow = async () => {
+    try {
+      const isOpen = await invoke<boolean>('is_floating_window_open');
+      if (!isOpen) {
+        await invoke('toggle_floating_window');
+      }
+      setFloatingOpen(true);
+    } catch (error) {
+      console.error('Failed to open floating window:', error);
+    }
+  };
 
   const toggleFloatingWindow = async () => {
     try {
       await invoke('toggle_floating_window');
-      // Check if window is now open
       const isOpen = await invoke<boolean>('is_floating_window_open');
       setFloatingOpen(isOpen);
     } catch (error) {
@@ -58,29 +115,17 @@ function App() {
       return;
     }
 
-    setDownloading(true);
-    setDownloadProgress('Starting download from drop zone...\n');
-    setDownloadUrl(url); // Also update the URL input
-
     try {
-      const downloadDir = await invoke<string>('create_download_dir');
-      const result = await invoke<string>('download_youtube', {
-        url: url,
-        outputDir: downloadDir
-      });
-
-      setDownloadProgress(prev => prev + '\n' + result);
-      console.log('[App] Download complete:', downloadDir);
+      await invoke('add_to_queue', { url });
+      await invoke('start_queue_processing');
+      const status = await invoke<QueueStatus>('get_queue_status');
+      setQueueStatus(status);
     } catch (error) {
-      console.error('[App] Download failed:', error);
-      setDownloadProgress(prev => prev + '\nError: ' + error);
-    } finally {
-      setDownloading(false);
+      console.error('[App] Failed to add to queue:', error);
     }
   };
 
   useEffect(() => {
-    // Check for stored auth on mount
     initializeAuth();
   }, []);
 
@@ -90,19 +135,32 @@ function App() {
       setDownloadProgress(prev => prev + '\n' + event.payload);
     });
 
-    // Listen for URLs dropped on the floating panel
-    const unlistenFloatingDrop = listen<string>('floating-url-dropped', (event) => {
-      console.log('[App] floating-url-dropped event:', event.payload);
-      // Only download if license is valid
-      if (licenseStatus?.is_valid) {
-        handleFloatingDownload(event.payload);
-      } else {
-        console.log('[App] License not valid, ignoring drop');
+    // Listen for queue updates
+    const unlistenQueue = listen<QueueStatus>('queue-update', (event) => {
+      if (event.payload) {
+        setQueueStatus(event.payload);
       }
     });
 
+    // Listen for URLs dropped on the floating panel
+    const unlistenFloatingDrop = listen<string>('floating-url-dropped', (event) => {
+      console.log('[App] floating-url-dropped event:', event.payload);
+      if (licenseStatus?.is_valid) {
+        handleFloatingDownload(event.payload);
+      }
+    });
+
+    // Load initial queue status
+    invoke<QueueStatus>('get_queue_status').then(setQueueStatus).catch(console.error);
+
+    // Open floating window by default when license is valid
+    if (licenseStatus?.is_valid) {
+      openFloatingWindow();
+    }
+
     return () => {
       unlistenDownload.then(fn => fn());
+      unlistenQueue.then(fn => fn());
       unlistenFloatingDrop.then(fn => fn());
     };
   }, [licenseStatus?.is_valid]);
@@ -110,17 +168,14 @@ function App() {
   const initializeAuth = async () => {
     setLoading(true);
     try {
-      // Check for stored auth in keychain
       const auth = await invoke<StoredAuth | null>('get_stored_auth');
 
       if (auth) {
         console.log('Found stored auth for:', auth.email);
         setStoredAuth(auth);
-        // Check license with stored email
         await checkLicense(auth.email);
       } else {
         console.log('No stored auth found');
-        // Get device info for display
         const uuid = await invoke<string>('get_device_uuid');
         setLicenseStatus({
           is_valid: false,
@@ -152,31 +207,21 @@ function App() {
     setLoginMessage('Opening Google login...');
 
     try {
-      // Step 1: Start OAuth flow - get auth URL
       const result = await invoke<OAuthStartResult>('start_google_login');
       console.log('OAuth started, opening browser...');
-
-      // Step 2: Open browser to auth URL
       await invoke('plugin:opener|open_url', { url: result.auth_url });
 
       setLoginMessage('Waiting for login in browser...');
-
-      // Step 3: Wait for callback (this starts the local server)
       const code = await invoke<string>('wait_for_oauth_callback');
       console.log('Got authorization code');
 
       setLoginMessage('Exchanging tokens...');
-
-      // Step 4: Exchange code for tokens
       const auth = await invoke<StoredAuth>('exchange_oauth_code', { code });
       console.log('Got tokens for:', auth.email);
 
       setStoredAuth(auth);
       setLoginMessage('Checking license...');
-
-      // Step 5: Check license with the authenticated email
       await checkLicense(auth.email);
-
       setLoginMessage('');
     } catch (error) {
       console.error('Login failed:', error);
@@ -208,14 +253,13 @@ function App() {
       await checkLicense(newAuth.email);
     } catch (error) {
       console.error('Token refresh failed:', error);
-      // If refresh fails, logout and re-authenticate
       await handleLogout();
     } finally {
       setLoading(false);
     }
   };
 
-  const handleDownload = async () => {
+  const handleAddToQueue = async () => {
     if (!downloadUrl.trim()) {
       alert('Please enter a URL');
       return;
@@ -226,24 +270,35 @@ function App() {
       return;
     }
 
-    setDownloading(true);
-    setDownloadProgress('Starting download...\n');
-
     try {
-      const downloadDir = await invoke<string>('create_download_dir');
-      const result = await invoke<string>('download_youtube', {
-        url: downloadUrl,
-        outputDir: downloadDir
-      });
-
-      setDownloadProgress(prev => prev + '\n' + result);
-      alert('Download complete! Check: ' + downloadDir);
+      await invoke<DownloadJob>('add_to_queue', { url: downloadUrl });
+      setDownloadUrl('');
+      await invoke('start_queue_processing');
+      const status = await invoke<QueueStatus>('get_queue_status');
+      setQueueStatus(status);
     } catch (error) {
-      console.error('Download failed:', error);
-      setDownloadProgress(prev => prev + '\nError: ' + error);
-      alert('Download failed: ' + error);
-    } finally {
-      setDownloading(false);
+      console.error('Failed to add to queue:', error);
+      alert('Failed to add to queue: ' + error);
+    }
+  };
+
+  const handleClearCompleted = async () => {
+    try {
+      await invoke('clear_completed_jobs');
+      const status = await invoke<QueueStatus>('get_queue_status');
+      setQueueStatus(status);
+    } catch (error) {
+      console.error('Failed to clear completed:', error);
+    }
+  };
+
+  const handleRemoveJob = async (jobId: string) => {
+    try {
+      await invoke('remove_from_queue', { jobId });
+      const status = await invoke<QueueStatus>('get_queue_status');
+      setQueueStatus(status);
+    } catch (error) {
+      console.error('Failed to remove job:', error);
     }
   };
 
@@ -259,7 +314,7 @@ function App() {
       <div className="app-container">
         <header className="app-header">
           <h1>Hasod Downloads - מוריד הסוד</h1>
-          <p>YouTube, Spotify, SoundCloud Downloader</p>
+          <p>Multi-Service Music Downloader</p>
         </header>
         <main className="content">
           <div className="loading-container">
@@ -274,7 +329,7 @@ function App() {
     <div className="app-container">
       <header className="app-header">
         <h1>Hasod Downloads - מוריד הסוד</h1>
-        <p>YouTube, Spotify, SoundCloud Downloader</p>
+        <p>Multi-Service Music Downloader</p>
         {licenseStatus?.is_valid && (
           <button
             className={`floating-toggle ${floatingOpen ? 'active' : ''}`}
@@ -296,6 +351,9 @@ function App() {
           disabled={!licenseStatus?.is_valid}
         >
           Downloads
+          {queueStatus && (queueStatus.active_count + queueStatus.queued_count) > 0 && (
+            <span className="tab-badge">{queueStatus.active_count + queueStatus.queued_count}</span>
+          )}
         </button>
         <button
           className={activeTab === 'license' ? 'tab active' : 'tab'}
@@ -401,47 +459,141 @@ function App() {
               </div>
             )}
 
+            {/* Supported Services Banner */}
+            <div className="services-banner">
+              <span className="services-label">Supported:</span>
+              <div className="services-list">
+                {Object.entries(serviceStyles).slice(0, 7).map(([key, style]) => (
+                  <span key={key} className="service-chip" title={style.name}>
+                    <span className="service-icon">{style.icon}</span>
+                    <span className="service-name">{style.name}</span>
+                  </span>
+                ))}
+              </div>
+            </div>
+
+            {/* URL Input */}
             <div className="download-form">
               <input
                 type="text"
                 value={downloadUrl}
                 onChange={(e) => setDownloadUrl(e.target.value)}
-                placeholder="Paste YouTube, Spotify, or SoundCloud URL..."
+                placeholder="Paste URL from any supported service..."
                 className="url-input"
-                disabled={downloading || !licenseStatus?.is_valid}
+                disabled={!licenseStatus?.is_valid}
+                onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()}
               />
-
               <button
-                onClick={handleDownload}
-                disabled={downloading || !licenseStatus?.is_valid || !downloadUrl.trim()}
+                onClick={handleAddToQueue}
+                disabled={!licenseStatus?.is_valid || !downloadUrl.trim()}
                 className="btn-download"
               >
-                {downloading ? 'Downloading...' : 'Download'}
+                Add to Queue
               </button>
             </div>
 
-            {downloadProgress && (
-              <div className="progress-box">
-                <h3>Progress</h3>
-                <pre className="progress-output">{downloadProgress}</pre>
+            {/* Queue Status */}
+            {queueStatus && queueStatus.jobs.length > 0 && (
+              <div className="queue-section">
+                <div className="queue-header">
+                  <h3>Download Queue</h3>
+                  <div className="queue-stats">
+                    {queueStatus.active_count > 0 && (
+                      <span className="stat downloading">{queueStatus.active_count} downloading</span>
+                    )}
+                    {queueStatus.queued_count > 0 && (
+                      <span className="stat queued">{queueStatus.queued_count} waiting</span>
+                    )}
+                    {queueStatus.completed_count > 0 && (
+                      <span className="stat completed">{queueStatus.completed_count} done</span>
+                    )}
+                    {queueStatus.error_count > 0 && (
+                      <span className="stat error">{queueStatus.error_count} failed</span>
+                    )}
+                  </div>
+                  {queueStatus.completed_count > 0 && (
+                    <button className="btn-clear" onClick={handleClearCompleted}>
+                      Clear Completed
+                    </button>
+                  )}
+                </div>
+
+                <div className="queue-list">
+                  {queueStatus.jobs.map(job => {
+                    const style = serviceStyles[job.service] || serviceStyles.Unknown;
+                    return (
+                      <div key={job.id} className={`queue-item ${job.status.toLowerCase()}`}>
+                        <span className="job-icon" style={{ color: style.color }}>{style.icon}</span>
+                        <div className="job-info">
+                          <div className="job-title">
+                            {job.metadata?.title || 'Loading...'}
+                          </div>
+                          <div className="job-artist">
+                            {job.metadata?.artist !== 'Unknown Artist' ? job.metadata?.artist : ''}
+                          </div>
+                          <div className="job-status-row">
+                            {(job.status === 'Downloading' || job.status === 'Converting') && (
+                              <div className="job-progress">
+                                <div className="progress-bar">
+                                  <div
+                                    className="progress-fill"
+                                    style={{ width: `${job.progress}%`, backgroundColor: style.color }}
+                                  />
+                                </div>
+                                <span className="progress-percent">{Math.round(job.progress)}%</span>
+                              </div>
+                            )}
+                            {job.status === 'Queued' && (
+                              <span className="status-label queued">Waiting...</span>
+                            )}
+                            {job.status === 'Complete' && (
+                              <span className="status-label complete">Done</span>
+                            )}
+                            {job.status === 'Error' && (
+                              <span className="status-label error" title={job.error}>Failed</span>
+                            )}
+                          </div>
+                        </div>
+                        {(job.status === 'Queued' || job.status === 'Error') && (
+                          <button
+                            className="btn-remove"
+                            onClick={() => handleRemoveJob(job.id)}
+                            title="Remove from queue"
+                          >
+                            ×
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             )}
 
+            {/* Progress Log (collapsible) */}
+            {downloadProgress && (
+              <details className="progress-box">
+                <summary>Progress Log</summary>
+                <pre className="progress-output">{downloadProgress}</pre>
+              </details>
+            )}
+
             <div className="info-box">
-              <h3>Supported Platforms</h3>
+              <h3>Features</h3>
               <ul>
-                <li>YouTube - Videos and playlists</li>
-                <li>Spotify - Coming soon (via Cloud Functions API)</li>
-                <li>SoundCloud - Coming soon</li>
+                <li><strong>Queue System:</strong> Add multiple URLs, they download one by one</li>
+                <li><strong>Quick Drop Zone:</strong> Drag URLs from browser directly to floating button</li>
+                <li><strong>Auto-Organization:</strong> Files saved as Artist/Album/Song.mp3</li>
+                <li><strong>High Quality:</strong> Downloads best available audio quality</li>
               </ul>
-              <p className="note">Files are saved to: ~/Downloads/Hasod Downloads/</p>
+              <p className="note">Files saved to: ~/Downloads/Hasod Downloads/</p>
             </div>
           </div>
         )}
       </main>
 
       <footer className="app-footer">
-        <p>Hasod Downloads v0.1.0 | עשוי באהבה על ידי הסוד און ליין</p>
+        <p>Hasod Downloads v0.2.0 | Multi-Service Queue</p>
       </footer>
     </div>
   );

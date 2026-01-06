@@ -1,385 +1,501 @@
 /**
  * Download Page
- * Main page for the music download service
+ * Desktop app download page for Hasod Downloads
  */
 
-import React, { useState, useEffect } from 'react';
+import React from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import DownloadForm from '../components/DownloadForm';
-import DownloadProgress from '../components/DownloadProgress';
-import DownloadResult from '../components/DownloadResult';
-import {
-  submitDownload,
-  getDownloadHistory,
-  deleteJob,
-  subscribeToJob,
-} from '../api/download.api';
-import type { DownloadJob } from '../types/download';
 
 const Download: React.FC = () => {
   const { currentUser, userDoc } = useAuth();
   const navigate = useNavigate();
-  const [activeJobs, setActiveJobs] = useState<DownloadJob[]>([]);
-  const [completedJobs, setCompletedJobs] = useState<DownloadJob[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [subscriptions, setSubscriptions] = useState<Map<string, () => void>>(new Map());
 
-  // Check if user has active subscription
   const hasSubscription =
     userDoc?.services?.['hasod-downloader']?.status === 'active';
 
-  useEffect(() => {
-    if (!currentUser) {
-      navigate('/');
-      return;
-    }
-
-    if (userDoc && !hasSubscription) {
-      // Don't navigate away, just show message
-      return;
-    }
-
-    // Load download history
-    loadHistory();
-
-    // Cleanup subscriptions on unmount
-    return () => {
-      subscriptions.forEach((unsubscribe) => unsubscribe());
-    };
-  }, [currentUser, userDoc, hasSubscription]);
-
-  const loadHistory = async () => {
-    if (!currentUser) return;
-
-    try {
-      const jobs = await getDownloadHistory(currentUser.uid, 20);
-
-      // Separate active and completed jobs
-      const active = jobs.filter(
-        (job) => job.status === 'queued' || job.status === 'downloading' || job.status === 'processing'
-      );
-      const completed = jobs.filter(
-        (job) => job.status === 'complete' || job.status === 'error'
-      );
-
-      setActiveJobs(active);
-      setCompletedJobs(completed);
-
-      // Subscribe to active jobs for real-time updates
-      active.forEach((job) => {
-        if (!subscriptions.has(job.jobId)) {
-          const unsubscribe = subscribeToJob(job.jobId, (updatedJob) => {
-            if (updatedJob) {
-              updateJob(updatedJob);
-            }
-          });
-          setSubscriptions((prev) => new Map(prev).set(job.jobId, unsubscribe));
-        }
-      });
-    } catch (err: any) {
-      console.error('Failed to load history:', err);
-      // Silently ignore index-building errors - they'll resolve automatically
-      // Only show user-facing errors for actual issues
-      const errorMessage = err.response?.data?.error || err.message || '';
-      if (!errorMessage.includes('index') && !errorMessage.includes('FAILED_PRECONDITION')) {
-        setError('Failed to load download history. Please refresh the page.');
-      }
-      // If it's an index error, just log it and continue - history will load once index is ready
-    }
-  };
-
-  const updateJob = (updatedJob: DownloadJob) => {
-    const isActive =
-      updatedJob.status === 'queued' ||
-      updatedJob.status === 'downloading' ||
-      updatedJob.status === 'processing';
-
-    if (isActive) {
-      setActiveJobs((prev) =>
-        prev.map((job) => (job.jobId === updatedJob.jobId ? updatedJob : job))
-      );
-    } else {
-      // Move to completed
-      setActiveJobs((prev) => prev.filter((job) => job.jobId !== updatedJob.jobId));
-      setCompletedJobs((prev) => {
-        const exists = prev.some((job) => job.jobId === updatedJob.jobId);
-        if (exists) {
-          return prev.map((job) => (job.jobId === updatedJob.jobId ? updatedJob : job));
-        }
-        return [updatedJob, ...prev];
-      });
-
-      // Unsubscribe from this job
-      const unsubscribe = subscriptions.get(updatedJob.jobId);
-      if (unsubscribe) {
-        unsubscribe();
-        setSubscriptions((prev) => {
-          const newMap = new Map(prev);
-          newMap.delete(updatedJob.jobId);
-          return newMap;
-        });
-      }
-    }
-  };
-
-  const handleSubmit = async (url: string, transliterate: boolean) => {
-    if (!currentUser) return;
-
-    setLoading(true);
-    setError('');
-
-    try {
-      const result = await submitDownload(currentUser.uid, url, transliterate);
-
-      // Subscribe to the new job
-      const unsubscribe = subscribeToJob(result.jobId, (updatedJob) => {
-        if (updatedJob) {
-          updateJob(updatedJob);
-        }
-      });
-      setSubscriptions((prev) => new Map(prev).set(result.jobId, unsubscribe));
-
-      // Add to active jobs (will be updated via subscription)
-      setActiveJobs((prev) => [
-        {
-          jobId: result.jobId,
-          uid: currentUser.uid,
-          url,
-          platform: 'unknown' as any,
-          type: 'single',
-          status: 'queued',
-          progress: 0,
-          message: 'Job queued',
-          metadata: {},
-          files: [],
-          transliterateEnabled: transliterate,
-          createdAt: new Date() as any,
-        },
-        ...prev,
-      ]);
-    } catch (err: any) {
-      console.error('Failed to submit download:', err);
-      const errorMsg = err.response?.data?.error || 'Failed to submit download';
-
-      if (err.response?.data?.requiresSubscription) {
-        setError('You need an active Hasod Downloader subscription to download music.');
-      } else {
-        setError(errorMsg);
-      }
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleDelete = async (jobId: string) => {
-    if (!currentUser) return;
-
-    try {
-      await deleteJob(jobId, currentUser.uid);
-      setCompletedJobs((prev) => prev.filter((job) => job.jobId !== jobId));
-    } catch (err: any) {
-      console.error('Failed to delete job:', err);
-    }
+  const handleDownload = () => {
+    window.open('/downloads/HasodDownloads.dmg', '_blank');
   };
 
   if (!currentUser) {
     return null;
   }
 
-  if (!hasSubscription) {
-    return (
-      <div className="download-page">
-        <div className="page-header">
-          <h1>🎵 Music Downloader</h1>
-          <p>Download high-quality music from YouTube, Spotify, and more</p>
-        </div>
-
-        <div className="subscription-required">
-          <h2>Subscription Required</h2>
-          <p>
-            You need an active subscription to Hasod Downloader to use this service.
-          </p>
-          <button onClick={() => navigate('/subscriptions')} className="subscribe-button">
-            View Subscriptions
-          </button>
-        </div>
-
-        <style jsx>{`
-          .download-page {
-            max-width: 1000px;
-            margin: 0 auto;
-            padding: 32px 16px;
-          }
-
-          .page-header {
-            text-align: center;
-            margin-bottom: 48px;
-          }
-
-          .page-header h1 {
-            font-size: 36px;
-            margin: 0 0 12px 0;
-            color: #333;
-          }
-
-          .page-header p {
-            font-size: 18px;
-            color: #666;
-            margin: 0;
-          }
-
-          .subscription-required {
-            background: white;
-            border-radius: 8px;
-            padding: 48px;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-            text-align: center;
-          }
-
-          .subscription-required h2 {
-            margin: 0 0 16px 0;
-            color: #333;
-          }
-
-          .subscription-required p {
-            margin: 0 0 24px 0;
-            color: #666;
-            font-size: 16px;
-          }
-
-          .subscribe-button {
-            padding: 12px 32px;
-            background-color: #4285f4;
-            color: white;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            font-weight: 600;
-            cursor: pointer;
-            transition: background-color 0.2s;
-          }
-
-          .subscribe-button:hover {
-            background-color: #357ae8;
-          }
-        `}</style>
-      </div>
-    );
-  }
-
   return (
     <div className="download-page">
-      <div className="page-header">
-        <h1>🎵 Music Downloader</h1>
-        <p>Download high-quality music from YouTube, Spotify, SoundCloud, and Bandcamp</p>
+      <div className="hero-section">
+        <div className="hero-glow"></div>
+        <div className="hero-content">
+          <div className="app-icon">
+            <svg viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <linearGradient id="iconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#667eea" />
+                  <stop offset="100%" stopColor="#764ba2" />
+                </linearGradient>
+              </defs>
+              <rect x="10" y="10" width="80" height="80" rx="18" fill="url(#iconGradient)" />
+              <path d="M50 25L50 55M50 55L38 43M50 55L62 43" stroke="white" strokeWidth="5" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M30 65H70" stroke="white" strokeWidth="5" strokeLinecap="round" />
+            </svg>
+          </div>
+          <h1 className="title">Hasod Downloads</h1>
+          <p className="subtitle">
+            Download high-quality music from YouTube, Spotify, SoundCloud & more
+          </p>
+          <div className="version-badge">Version 0.1.0</div>
+        </div>
       </div>
 
-      {error && (
-        <div className="error-banner">
-          {error}
-          <button onClick={() => setError('')} className="close-button">
-            ×
-          </button>
+      <div className="download-section">
+        {hasSubscription ? (
+          <div className="download-card">
+            <div className="platform-info">
+              <svg className="platform-icon" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+              </svg>
+              <div className="platform-text">
+                <span className="platform-name">macOS</span>
+                <span className="platform-arch">Apple Silicon (M1/M2/M3)</span>
+              </div>
+            </div>
+            <button className="download-button" onClick={handleDownload}>
+              <svg className="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                <polyline points="7,10 12,15 17,10" />
+                <line x1="12" y1="15" x2="12" y2="3" />
+              </svg>
+              Download for Mac
+            </button>
+            <span className="file-info">DMG installer • ~93 MB</span>
+          </div>
+        ) : (
+          <div className="subscription-card">
+            <div className="lock-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
+                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+              </svg>
+            </div>
+            <h3>Subscription Required</h3>
+            <p>Get access to Hasod Downloads with an active subscription</p>
+            <button className="subscribe-button" onClick={() => navigate('/subscriptions')}>
+              View Plans
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="features-section">
+        <h2>Why Hasod Downloads?</h2>
+        <div className="features-grid">
+          <div className="feature-card">
+            <div className="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <circle cx="12" cy="12" r="10" />
+                <polygon points="10,8 16,12 10,16" fill="currentColor" />
+              </svg>
+            </div>
+            <h3>Multiple Platforms</h3>
+            <p>YouTube, Spotify, SoundCloud, Bandcamp and more</p>
+          </div>
+          <div className="feature-card">
+            <div className="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M9 18V5l12-2v13" />
+                <circle cx="6" cy="18" r="3" />
+                <circle cx="18" cy="16" r="3" />
+              </svg>
+            </div>
+            <h3>High Quality Audio</h3>
+            <p>Up to 320kbps MP3 or lossless FLAC</p>
+          </div>
+          <div className="feature-card">
+            <div className="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <rect x="3" y="3" width="18" height="18" rx="2" />
+                <path d="M3 9h18M9 21V9" />
+              </svg>
+            </div>
+            <h3>Playlist Support</h3>
+            <p>Download entire playlists and albums at once</p>
+          </div>
+          <div className="feature-card">
+            <div className="feature-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z" />
+              </svg>
+            </div>
+            <h3>Lightning Fast</h3>
+            <p>Native desktop app for maximum performance</p>
+          </div>
         </div>
-      )}
+      </div>
 
-      <DownloadForm onSubmit={handleSubmit} disabled={loading} />
-
-      {activeJobs.length > 0 && (
-        <section className="jobs-section">
-          <h2>Active Downloads</h2>
-          {activeJobs.map((job) => (
-            <DownloadProgress key={job.jobId} job={job} />
-          ))}
-        </section>
-      )}
-
-      {completedJobs.length > 0 && (
-        <section className="jobs-section">
-          <h2>Download History</h2>
-          {completedJobs.map((job) => (
-            <DownloadResult
-              key={job.jobId}
-              job={job}
-              onDelete={() => handleDelete(job.jobId)}
-            />
-          ))}
-        </section>
-      )}
-
-      {activeJobs.length === 0 && completedJobs.length === 0 && (
-        <div className="empty-state">
-          <p>No downloads yet. Paste a music URL above to get started!</p>
+      <div className="requirements-section">
+        <h2>System Requirements</h2>
+        <div className="requirements-card">
+          <div className="requirement">
+            <span className="req-label">Operating System</span>
+            <span className="req-value">macOS 11.0 (Big Sur) or later</span>
+          </div>
+          <div className="requirement">
+            <span className="req-label">Architecture</span>
+            <span className="req-value">Apple Silicon (M1, M2, M3)</span>
+          </div>
+          <div className="requirement">
+            <span className="req-label">Disk Space</span>
+            <span className="req-value">~200 MB (including dependencies)</span>
+          </div>
         </div>
-      )}
+        <p className="coming-soon">Intel Mac & Windows versions coming soon</p>
+      </div>
 
-      <style jsx>{`
+      <style>{`
         .download-page {
+          min-height: calc(100vh - 120px);
+          background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+          padding: 0;
+          margin: -32px -16px;
+        }
+
+        .hero-section {
+          position: relative;
+          padding: 80px 32px 60px;
+          text-align: center;
+          overflow: hidden;
+        }
+
+        .hero-glow {
+          position: absolute;
+          top: -50%;
+          left: 50%;
+          transform: translateX(-50%);
+          width: 800px;
+          height: 800px;
+          background: radial-gradient(circle, rgba(102, 126, 234, 0.3) 0%, transparent 70%);
+          pointer-events: none;
+        }
+
+        .hero-content {
+          position: relative;
+          z-index: 1;
+        }
+
+        .app-icon {
+          width: 120px;
+          height: 120px;
+          margin: 0 auto 32px;
+          filter: drop-shadow(0 20px 40px rgba(102, 126, 234, 0.4));
+        }
+
+        .title {
+          font-size: 48px;
+          font-weight: 700;
+          color: #fff;
+          margin: 0 0 16px;
+          letter-spacing: -1px;
+        }
+
+        .subtitle {
+          font-size: 20px;
+          color: rgba(255, 255, 255, 0.7);
+          margin: 0 0 24px;
+          max-width: 500px;
+          margin-left: auto;
+          margin-right: auto;
+        }
+
+        .version-badge {
+          display: inline-block;
+          padding: 6px 16px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 20px;
+          color: rgba(255, 255, 255, 0.8);
+          font-size: 14px;
+          border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .download-section {
+          padding: 0 32px 60px;
+          display: flex;
+          justify-content: center;
+        }
+
+        .download-card {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 20px;
+          padding: 40px;
+          text-align: center;
+          backdrop-filter: blur(10px);
+          max-width: 400px;
+          width: 100%;
+        }
+
+        .platform-info {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          gap: 16px;
+          margin-bottom: 32px;
+        }
+
+        .platform-icon {
+          width: 48px;
+          height: 48px;
+          color: #fff;
+        }
+
+        .platform-text {
+          text-align: left;
+        }
+
+        .platform-name {
+          display: block;
+          font-size: 24px;
+          font-weight: 600;
+          color: #fff;
+        }
+
+        .platform-arch {
+          display: block;
+          font-size: 14px;
+          color: rgba(255, 255, 255, 0.6);
+        }
+
+        .download-button {
+          display: inline-flex;
+          align-items: center;
+          gap: 12px;
+          padding: 16px 40px;
+          font-size: 18px;
+          font-weight: 600;
+          color: #fff;
+          background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+          border: none;
+          border-radius: 12px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+          box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+        }
+
+        .download-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 15px 40px rgba(102, 126, 234, 0.5);
+        }
+
+        .download-button:active {
+          transform: translateY(0);
+        }
+
+        .download-icon {
+          width: 24px;
+          height: 24px;
+        }
+
+        .file-info {
+          display: block;
+          margin-top: 16px;
+          font-size: 14px;
+          color: rgba(255, 255, 255, 0.5);
+        }
+
+        .subscription-card {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 20px;
+          padding: 48px;
+          text-align: center;
+          backdrop-filter: blur(10px);
+          max-width: 400px;
+          width: 100%;
+        }
+
+        .lock-icon {
+          width: 64px;
+          height: 64px;
+          margin: 0 auto 24px;
+          padding: 16px;
+          background: rgba(255, 255, 255, 0.1);
+          border-radius: 50%;
+          color: rgba(255, 255, 255, 0.6);
+        }
+
+        .lock-icon svg {
+          width: 100%;
+          height: 100%;
+        }
+
+        .subscription-card h3 {
+          font-size: 24px;
+          color: #fff;
+          margin: 0 0 12px;
+        }
+
+        .subscription-card p {
+          color: rgba(255, 255, 255, 0.6);
+          margin: 0 0 32px;
+        }
+
+        .subscribe-button {
+          padding: 14px 36px;
+          font-size: 16px;
+          font-weight: 600;
+          color: #667eea;
+          background: #fff;
+          border: none;
+          border-radius: 10px;
+          cursor: pointer;
+          transition: all 0.3s ease;
+        }
+
+        .subscribe-button:hover {
+          transform: translateY(-2px);
+          box-shadow: 0 10px 30px rgba(255, 255, 255, 0.2);
+        }
+
+        .features-section {
+          padding: 60px 32px;
+          background: rgba(0, 0, 0, 0.2);
+        }
+
+        .features-section h2 {
+          text-align: center;
+          font-size: 32px;
+          color: #fff;
+          margin: 0 0 48px;
+        }
+
+        .features-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+          gap: 24px;
           max-width: 1000px;
           margin: 0 auto;
-          padding: 32px 16px;
         }
 
-        .page-header {
+        .feature-card {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.08);
+          border-radius: 16px;
+          padding: 32px;
           text-align: center;
-          margin-bottom: 48px;
+          transition: all 0.3s ease;
         }
 
-        .page-header h1 {
-          font-size: 36px;
-          margin: 0 0 12px 0;
-          color: #333;
+        .feature-card:hover {
+          background: rgba(255, 255, 255, 0.08);
+          transform: translateY(-4px);
         }
 
-        .page-header p {
+        .feature-icon {
+          width: 56px;
+          height: 56px;
+          margin: 0 auto 20px;
+          color: #667eea;
+        }
+
+        .feature-icon svg {
+          width: 100%;
+          height: 100%;
+        }
+
+        .feature-card h3 {
           font-size: 18px;
-          color: #666;
-          margin: 0;
+          color: #fff;
+          margin: 0 0 8px;
         }
 
-        .error-banner {
-          background-color: #ffebee;
-          border-left: 4px solid #f44336;
-          color: #d32f2f;
-          padding: 16px 20px;
-          border-radius: 4px;
-          margin-bottom: 24px;
+        .feature-card p {
+          font-size: 14px;
+          color: rgba(255, 255, 255, 0.6);
+          margin: 0;
+          line-height: 1.5;
+        }
+
+        .requirements-section {
+          padding: 60px 32px;
+          text-align: center;
+        }
+
+        .requirements-section h2 {
+          font-size: 28px;
+          color: #fff;
+          margin: 0 0 32px;
+        }
+
+        .requirements-card {
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
+          border-radius: 16px;
+          padding: 32px;
+          max-width: 500px;
+          margin: 0 auto 24px;
+        }
+
+        .requirement {
           display: flex;
           justify-content: space-between;
           align-items: center;
+          padding: 12px 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
         }
 
-        .close-button {
-          background: none;
-          border: none;
-          color: #d32f2f;
-          font-size: 24px;
-          cursor: pointer;
-          padding: 0 8px;
-          line-height: 1;
+        .requirement:last-child {
+          border-bottom: none;
         }
 
-        .jobs-section {
-          margin-top: 48px;
+        .req-label {
+          color: rgba(255, 255, 255, 0.6);
+          font-size: 14px;
         }
 
-        .jobs-section h2 {
-          font-size: 24px;
-          margin: 0 0 24px 0;
-          color: #333;
+        .req-value {
+          color: #fff;
+          font-size: 14px;
+          font-weight: 500;
         }
 
-        .empty-state {
-          text-align: center;
-          padding: 64px 32px;
-          color: #999;
+        .coming-soon {
+          color: rgba(255, 255, 255, 0.4);
+          font-size: 14px;
+          font-style: italic;
         }
 
-        .empty-state p {
-          font-size: 16px;
-          margin: 0;
+        @media (max-width: 768px) {
+          .hero-section {
+            padding: 60px 24px 40px;
+          }
+
+          .title {
+            font-size: 36px;
+          }
+
+          .subtitle {
+            font-size: 16px;
+          }
+
+          .download-section {
+            padding: 0 24px 40px;
+          }
+
+          .download-card,
+          .subscription-card {
+            padding: 32px 24px;
+          }
+
+          .features-section,
+          .requirements-section {
+            padding: 40px 24px;
+          }
+
+          .requirement {
+            flex-direction: column;
+            align-items: flex-start;
+            gap: 4px;
+          }
         }
       `}</style>
     </div>

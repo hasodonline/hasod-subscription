@@ -1,14 +1,15 @@
-import React, { useEffect, useState } from 'react';
-import { Routes, Route, Link, Navigate, useLocation } from 'react-router-dom';
-import { auth, onAuthStateChanged, signInWithGoogle, signOut, db } from './firebase';
+import { useEffect, useState } from 'react';
+import { Routes, Route, Link, Navigate } from 'react-router-dom';
+import { auth, onAuthStateChanged, signInWithGoogle, db } from './firebase';
 import { doc, getDoc } from 'firebase/firestore';
-import Home from './pages/Home';
-import Profile from './pages/Profile';
 import Subscriptions from './pages/Subscriptions';
 import Download from './pages/Download';
 import Admin from './pages/Admin';
 import Developer from './pages/Developer';
 import PayPalReturn from './pages/PayPalReturn';
+import OnboardingModal from './components/OnboardingModal';
+import ProfileEditModal from './components/ProfileEditModal';
+import UserMenu from './components/UserMenu';
 import { UserProfile, isProfileComplete } from './types/user';
 import './styles.css';
 
@@ -24,7 +25,7 @@ function App() {
   const [user, setUser] = useState<AppUser | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [loading, setLoading] = useState(true);
-  const location = useLocation();
+  const [showProfileEditModal, setShowProfileEditModal] = useState(false);
 
   useEffect(() => {
     console.log('🚀 App component mounted, setting up auth...');
@@ -86,28 +87,35 @@ function App() {
     return <div className="app loading">טוען...</div>;
   }
 
-  // Onboarding: if user is logged in but profile incomplete, redirect to profile
-  // (except when already on profile page)
-  const needsOnboarding = user && !profileComplete && location.pathname !== '/profile';
+  // Show onboarding modal for logged in users without complete profile
+  const showOnboarding = user && !profileComplete;
+
+  // Render login prompt for non-authenticated users
+  const renderLoginPrompt = () => (
+    <div className="login-prompt">
+      <h2>ברוכים הבאים להסוד אונליין</h2>
+      <p>התחבר כדי לצפות במנויים שלך</p>
+      <button onClick={handleSignIn}>התחבר עם Google</button>
+    </div>
+  );
 
   return (
     <div className="app">
       <header>
         <h1>הסוד אונליין</h1>
         <nav>
-          <Link to="/">בית</Link>
-          {user && <Link to="/profile">פרופיל</Link>}
-          {user && profileComplete && <Link to="/subscriptions">מנוי</Link>}
+          {user && profileComplete && <Link to="/">מנוי</Link>}
           {user && profileComplete && <Link to="/download">הורדות</Link>}
           {isAdmin && <Link to="/admin">ניהול</Link>}
           {isAdmin && <Link to="/developer">מפתח</Link>}
         </nav>
         <div>
           {user ? (
-            <>
-              <span>{user.email}</span>
-              <button onClick={() => signOut()}>התנתק</button>
-            </>
+            <UserMenu
+              user={user}
+              profile={userProfile}
+              onEditProfile={() => setShowProfileEditModal(true)}
+            />
           ) : (
             <button onClick={handleSignIn}>התחבר עם Google</button>
           )}
@@ -115,38 +123,54 @@ function App() {
       </header>
 
       <main>
-        {needsOnboarding ? (
-          <Navigate to="/profile" replace />
-        ) : (
-          <Routes>
-            <Route path="/" element={<Home />} />
-            <Route
-              path="/profile"
-              element={user ? <Profile uid={user.uid} profile={userProfile} onUpdate={setUserProfile} /> : <Navigate to="/" />}
-            />
-            <Route
-              path="/subscriptions"
-              element={user && profileComplete ? <Subscriptions uid={user.uid} profile={userProfile} /> : <Navigate to="/" />}
-            />
-            <Route
-              path="/download"
-              element={user && profileComplete ? <Download /> : <Navigate to="/" />}
-            />
-            <Route
-              path="/paypal-return"
-              element={user ? <PayPalReturn uid={user.uid} /> : <Navigate to="/" />}
-            />
-            <Route
-              path="/admin"
-              element={isAdmin ? <Admin /> : <Navigate to="/" />}
-            />
-            <Route
-              path="/developer"
-              element={isAdmin ? <Developer /> : <Navigate to="/" />}
-            />
-          </Routes>
-        )}
+        <Routes>
+          <Route
+            path="/"
+            element={user && profileComplete ? <Subscriptions uid={user.uid} profile={userProfile} /> : renderLoginPrompt()}
+          />
+          <Route
+            path="/subscriptions"
+            element={<Navigate to="/" replace />}
+          />
+          <Route
+            path="/download"
+            element={user && profileComplete ? <Download /> : <Navigate to="/" />}
+          />
+          <Route
+            path="/paypal-return"
+            element={user ? <PayPalReturn uid={user.uid} /> : <Navigate to="/" />}
+          />
+          <Route
+            path="/admin"
+            element={isAdmin ? <Admin /> : <Navigate to="/" />}
+          />
+          <Route
+            path="/developer"
+            element={isAdmin ? <Developer /> : <Navigate to="/" />}
+          />
+        </Routes>
       </main>
+
+      {/* Onboarding modal for new users */}
+      {showOnboarding && (
+        <OnboardingModal
+          uid={user.uid}
+          email={user.email || ''}
+          onComplete={setUserProfile}
+        />
+      )}
+
+      {/* Profile edit modal */}
+      {showProfileEditModal && userProfile && (
+        <ProfileEditModal
+          profile={userProfile}
+          onSave={(updatedProfile) => {
+            setUserProfile(updatedProfile);
+            setShowProfileEditModal(false);
+          }}
+          onClose={() => setShowProfileEditModal(false)}
+        />
+      )}
     </div>
   );
 }

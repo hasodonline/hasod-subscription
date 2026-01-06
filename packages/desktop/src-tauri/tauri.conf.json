@@ -38,7 +38,8 @@
     ],
     "externalBin": [
       "../binaries/yt-dlp",
-      "../binaries/ffmpeg"
+      "../binaries/ffmpeg",
+      "../binaries/spotdl"
     ],
     "resources": [
       "../binaries/*"
