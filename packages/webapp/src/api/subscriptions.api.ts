@@ -1,56 +1,58 @@
 /**
  * Subscriptions API
  * API methods for subscription operations
+ *
+ * Types are generated from OpenAPI spec - see packages/api-spec/openapi.yaml
  */
 
 import apiClient from './client';
+import type { components } from './schema';
 
-export interface CreateSubscriptionParams {
-  uid: string;
-  serviceId: string;
-}
-
-export interface CreateSubscriptionResponse {
-  approvalUrl: string;
-  subscription: any;
-  subscriptionId: string;
-}
-
-export interface ActivateSubscriptionParams {
-  uid: string;
-  subscriptionId: string;
-}
-
-export interface ActivateSubscriptionResponse {
-  success: boolean;
-  status: string;
-  serviceId: string;
-  subscription: any;
-}
+// Re-export types for convenience
+export type CreateSubscriptionRequest = components['schemas']['CreateSubscriptionRequest'];
+export type CreateSubscriptionResponse = components['schemas']['CreateSubscriptionResponse'];
+export type ActivateSubscriptionRequest = components['schemas']['ActivateSubscriptionRequest'];
+export type ActivateSubscriptionResponse = components['schemas']['ActivateSubscriptionResponse'];
+export type CancelSubscriptionRequest = components['schemas']['CancelSubscriptionRequest'];
+export type ManageGroupRequest = components['schemas']['ManageGroupRequest'];
+export type SuccessResponse = components['schemas']['SuccessResponse'];
 
 export async function createSubscription(
-  params: CreateSubscriptionParams
+  params: CreateSubscriptionRequest
 ): Promise<CreateSubscriptionResponse> {
-  const response = await apiClient.post('/create-subscription', params);
+  const response = await apiClient.post<CreateSubscriptionResponse>('/create-subscription', params);
   return response.data;
 }
 
 export async function activateSubscription(
-  params: ActivateSubscriptionParams
+  params: ActivateSubscriptionRequest
 ): Promise<ActivateSubscriptionResponse> {
-  const response = await apiClient.post('/activate-subscription', params);
+  const response = await apiClient.post<ActivateSubscriptionResponse>('/activate-subscription', params);
   return response.data;
 }
 
-export async function cancelSubscription(uid: string, serviceId: string, reason?: string): Promise<void> {
-  await apiClient.post('/admin/cancel-subscription', { uid, serviceId, reason });
+export async function cancelSubscription(
+  uid: string,
+  serviceId: string,
+  reason?: string
+): Promise<SuccessResponse> {
+  const response = await apiClient.post<SuccessResponse>('/admin/cancel-subscription', {
+    uid,
+    serviceId,
+    reason,
+  });
+  return response.data;
 }
 
 export async function manageGoogleGroup(
   uid: string,
   serviceId: string,
   action: 'add' | 'remove'
-): Promise<{ success: boolean; message: string }> {
-  const response = await apiClient.post('/admin/manage-group', { uid, serviceId, action });
+): Promise<SuccessResponse> {
+  const response = await apiClient.post<SuccessResponse>('/admin/manage-group', {
+    uid,
+    serviceId,
+    action,
+  });
   return response.data;
 }

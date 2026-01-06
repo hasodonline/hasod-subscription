@@ -1,0 +1,1155 @@
+openapi: 3.1.0
+info:
+  title: Hasod Subscription API
+  version: 1.0.0
+  description: |
+    Subscription management API for Hasod services.
+    Handles service catalog, PayPal subscriptions, manual payments, and download jobs.
+  contact:
+    email: hasod@hasodonline.com
+  license:
+    name: Proprietary
+    url: https://hasod-41a23.web.app/terms
+
+servers:
+  - url: https://us-central1-hasod-41a23.cloudfunctions.net/api
+    description: Production
+  - url: http://localhost:5001/hasod-41a23/us-central1/api
+    description: Development (Firebase Emulator)
+
+tags:
+  - name: Services
+    description: Service catalog operations
+  - name: Subscriptions
+    description: PayPal subscription lifecycle
+  - name: User
+    description: User subscription status
+  - name: Admin
+    description: Administrative operations (requires admin email)
+  - name: Downloads
+    description: Download service operations
+
+# Default: no security (public endpoints explicitly set security: [])
+security: []
+
+paths:
+  # ===========================================================================
+  # Services
+  # ===========================================================================
+  /services:
+    get:
+      operationId: getServices
+      summary: List all active services
+      tags: [Services]
+      responses:
+        '200':
+          description: List of active services
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServicesResponse'
+
+  /services/{serviceId}:
+    get:
+      operationId: getService
+      summary: Get a specific service
+      tags: [Services]
+      parameters:
+        - $ref: '#/components/parameters/ServiceIdPath'
+      responses:
+        '200':
+          description: Service details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ServiceResponse'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Subscriptions
+  # ===========================================================================
+  /create-subscription:
+    post:
+      operationId: createSubscription
+      summary: Create a PayPal subscription
+      description: Initiates a PayPal subscription for a user and service
+      tags: [Subscriptions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateSubscriptionRequest'
+      responses:
+        '200':
+          description: Subscription created, approval URL returned
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CreateSubscriptionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /activate-subscription:
+    post:
+      operationId: activateSubscription
+      summary: Activate a subscription after PayPal approval
+      tags: [Subscriptions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ActivateSubscriptionRequest'
+      responses:
+        '200':
+          description: Subscription activated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ActivateSubscriptionResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /paypal-webhook:
+    post:
+      operationId: handlePaypalWebhook
+      summary: Handle PayPal webhook events
+      description: Processes PayPal subscription lifecycle events
+      tags: [Subscriptions]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PayPalWebhookEvent'
+      responses:
+        '200':
+          description: Webhook processed successfully
+        '500':
+          description: Webhook processing failed
+
+  # ===========================================================================
+  # User
+  # ===========================================================================
+  /user/subscription-status:
+    get:
+      operationId: getSubscriptionStatus
+      summary: Get user subscription status
+      description: Returns user's subscription status for all services. Used by desktop app for license validation.
+      tags: [User]
+      security:
+        - bearerAuth: []
+        - {}
+      parameters:
+        - name: email
+          in: query
+          description: User email (fallback if no Bearer token)
+          schema:
+            type: string
+            format: email
+      responses:
+        '200':
+          description: User subscription status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionStatusResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Admin - Services
+  # ===========================================================================
+  /admin/services:
+    post:
+      operationId: createOrUpdateService
+      summary: Create or update a service
+      description: Admin only. Creates a new service or updates existing one.
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminServiceRequest'
+      responses:
+        '200':
+          description: Service created/updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminServiceResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/services/{serviceId}:
+    delete:
+      operationId: deleteService
+      summary: Delete a service
+      description: Admin only. Permanently deletes a service.
+      tags: [Admin]
+      parameters:
+        - $ref: '#/components/parameters/ServiceIdPath'
+      responses:
+        '200':
+          description: Service deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  # ===========================================================================
+  # Admin - Manual Payments
+  # ===========================================================================
+  /admin/manual-payment:
+    post:
+      operationId: processManualPayment
+      summary: Process a manual payment
+      description: Admin only. Records a manual payment and activates subscription.
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManualPaymentRequest'
+      responses:
+        '200':
+          description: Payment processed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManualPaymentResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/manual-transactions:
+    get:
+      operationId: getAllTransactions
+      summary: Get all manual transactions
+      description: Admin only. Returns all manual transactions with optional filters.
+      tags: [Admin]
+      parameters:
+        - name: serviceId
+          in: query
+          schema:
+            type: string
+        - name: startDate
+          in: query
+          schema:
+            type: string
+            format: date
+        - name: endDate
+          in: query
+          schema:
+            type: string
+            format: date
+      responses:
+        '200':
+          description: List of transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionsResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/manual-transactions/{userId}:
+    get:
+      operationId: getUserTransactions
+      summary: Get user's manual transactions
+      description: Admin only. Returns manual transactions for a specific user.
+      tags: [Admin]
+      parameters:
+        - name: userId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: User's transactions
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionsResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ===========================================================================
+  # Admin - Subscription Management
+  # ===========================================================================
+  /admin/cancel-subscription:
+    post:
+      operationId: adminCancelSubscription
+      summary: Cancel a user's subscription
+      description: Admin only. Cancels PayPal subscription and updates status.
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelSubscriptionRequest'
+      responses:
+        '200':
+          description: Subscription canceled
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/manage-group:
+    post:
+      operationId: manageGoogleGroup
+      summary: Manage Google Group membership
+      description: Admin only. Add or remove user from service's Google Group.
+      tags: [Admin]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManageGroupRequest'
+      responses:
+        '200':
+          description: Group membership updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ===========================================================================
+  # Admin - Migration (One-time endpoints)
+  # ===========================================================================
+  /admin/migrate-users:
+    post:
+      operationId: migrateUsers
+      summary: Migrate users to multi-service schema
+      description: Admin only. One-time migration endpoint.
+      tags: [Admin]
+      responses:
+        '200':
+          description: Migration complete
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MigrationResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  /admin/seed-services:
+    post:
+      operationId: seedServices
+      summary: Seed initial services
+      description: Admin only. One-time endpoint to seed services collection.
+      tags: [Admin]
+      responses:
+        '200':
+          description: Services seeded
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SeedServicesResponse'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+
+  # ===========================================================================
+  # Downloads
+  # ===========================================================================
+  /download/submit:
+    post:
+      operationId: submitDownload
+      summary: Submit a download job
+      description: Creates a new download job for YouTube, Spotify, SoundCloud, or Bandcamp.
+      tags: [Downloads]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitDownloadRequest'
+      responses:
+        '200':
+          description: Download job created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubmitDownloadResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          description: Subscription required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SubscriptionRequiredError'
+
+  /download/status/{jobId}:
+    get:
+      operationId: getDownloadStatus
+      summary: Get download job status
+      tags: [Downloads]
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: uid
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Job status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadJobResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
+  /download/history:
+    get:
+      operationId: getDownloadHistory
+      summary: Get user's download history
+      tags: [Downloads]
+      parameters:
+        - name: uid
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 30
+            minimum: 1
+            maximum: 100
+      responses:
+        '200':
+          description: Download history
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadHistoryResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+  /download/{jobId}:
+    delete:
+      operationId: deleteDownloadJob
+      summary: Delete a download job
+      tags: [Downloads]
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [uid]
+              properties:
+                uid:
+                  type: string
+      responses:
+        '200':
+          description: Job deleted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuccessResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+
+components:
+  # ===========================================================================
+  # Security Schemes
+  # ===========================================================================
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Firebase ID token
+
+  # ===========================================================================
+  # Parameters
+  # ===========================================================================
+  parameters:
+    ServiceIdPath:
+      name: serviceId
+      in: path
+      required: true
+      schema:
+        type: string
+      description: Service identifier (e.g., 'music-library', 'hasod-downloader')
+
+  # ===========================================================================
+  # Responses
+  # ===========================================================================
+  responses:
+    BadRequest:
+      description: Bad request - missing or invalid parameters
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Unauthorized:
+      description: Authentication required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    Forbidden:
+      description: Access denied - admin privileges required
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+    NotFound:
+      description: Resource not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Schemas
+  # ===========================================================================
+  schemas:
+    # -------------------------------------------------------------------------
+    # Common
+    # -------------------------------------------------------------------------
+    ErrorResponse:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+        message:
+          type: string
+
+    SuccessResponse:
+      type: object
+      required: [success, message]
+      properties:
+        success:
+          type: boolean
+          const: true
+        message:
+          type: string
+
+    # -------------------------------------------------------------------------
+    # Service Schemas
+    # -------------------------------------------------------------------------
+    Service:
+      type: object
+      required:
+        - id
+        - name
+        - nameHe
+        - description
+        - descriptionHe
+        - paypalPlanId
+        - pricePerMonth
+        - currency
+        - active
+        - order
+        - features
+        - featuresHe
+      properties:
+        id:
+          type: string
+          examples: ['music-library', 'hasod-downloader']
+        name:
+          type: string
+          examples: ['Music Library Access']
+        nameHe:
+          type: string
+          examples: ['גישה לספריית המוזיקה']
+        description:
+          type: string
+        descriptionHe:
+          type: string
+        paypalPlanId:
+          type: string
+          examples: ['P-4TS05390XU019010LNAY3XOI']
+        pricePerMonth:
+          type: number
+          examples: [10]
+        currency:
+          type: string
+          enum: [USD, ILS]
+        googleGroupEmail:
+          type: string
+          format: email
+        active:
+          type: boolean
+        order:
+          type: integer
+        features:
+          type: array
+          items:
+            type: string
+        featuresHe:
+          type: array
+          items:
+            type: string
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+        createdBy:
+          type: string
+
+    ServicesResponse:
+      type: object
+      required: [services]
+      properties:
+        services:
+          type: array
+          items:
+            $ref: '#/components/schemas/Service'
+
+    ServiceResponse:
+      type: object
+      required: [service]
+      properties:
+        service:
+          $ref: '#/components/schemas/Service'
+
+    # -------------------------------------------------------------------------
+    # Subscription Schemas
+    # -------------------------------------------------------------------------
+    SubscriptionStatus:
+      type: string
+      enum: [active, pending, canceled, expired, suspended, none]
+
+    PaymentMethod:
+      type: string
+      enum: [paypal, manual]
+
+    ManualPaymentMethod:
+      type: string
+      enum: [cash, bank-transfer, other]
+
+    UserServiceSubscription:
+      type: object
+      required: [status, paymentMethod, updatedAt]
+      properties:
+        status:
+          $ref: '#/components/schemas/SubscriptionStatus'
+        paymentMethod:
+          $ref: '#/components/schemas/PaymentMethod'
+        paypalSubscriptionId:
+          type: string
+        paypalSubscriptionStatus:
+          type: string
+        manualStartDate:
+          type: string
+          format: date-time
+        manualEndDate:
+          type: string
+          format: date-time
+        manualTransactionId:
+          type: string
+        inGoogleGroup:
+          type: boolean
+        activatedAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    CreateSubscriptionRequest:
+      type: object
+      required: [uid, serviceId]
+      properties:
+        uid:
+          type: string
+          description: Firebase user ID
+        serviceId:
+          type: string
+          description: Service to subscribe to
+
+    CreateSubscriptionResponse:
+      type: object
+      required: [approvalUrl, subscriptionId]
+      properties:
+        approvalUrl:
+          type: string
+          format: uri
+          description: PayPal approval URL to redirect user
+        subscription:
+          type: object
+          description: PayPal subscription object
+        subscriptionId:
+          type: string
+
+    ActivateSubscriptionRequest:
+      type: object
+      required: [uid, subscriptionId]
+      properties:
+        uid:
+          type: string
+        subscriptionId:
+          type: string
+          description: PayPal subscription ID
+
+    ActivateSubscriptionResponse:
+      type: object
+      required: [success, status, serviceId]
+      properties:
+        success:
+          type: boolean
+        status:
+          type: string
+        serviceId:
+          type: string
+        subscription:
+          type: object
+
+    PayPalWebhookEvent:
+      type: object
+      properties:
+        id:
+          type: string
+        event_type:
+          type: string
+          examples:
+            - BILLING.SUBSCRIPTION.ACTIVATED
+            - BILLING.SUBSCRIPTION.CANCELLED
+            - BILLING.SUBSCRIPTION.EXPIRED
+            - BILLING.SUBSCRIPTION.SUSPENDED
+        resource:
+          type: object
+          properties:
+            id:
+              type: string
+            status:
+              type: string
+            custom_id:
+              type: string
+
+    # -------------------------------------------------------------------------
+    # User Schemas
+    # -------------------------------------------------------------------------
+    SubscriptionStatusResponse:
+      type: object
+      required: [email, services]
+      properties:
+        email:
+          type: string
+          format: email
+        services:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/UserServiceSubscription'
+
+    # -------------------------------------------------------------------------
+    # Admin Schemas
+    # -------------------------------------------------------------------------
+    AdminServiceRequest:
+      type: object
+      required: [service]
+      properties:
+        service:
+          type: object
+          properties:
+            id:
+              type: string
+              description: If provided, updates existing service
+            name:
+              type: string
+            nameHe:
+              type: string
+            description:
+              type: string
+            descriptionHe:
+              type: string
+            paypalPlanId:
+              type: string
+            pricePerMonth:
+              type: number
+            currency:
+              type: string
+              enum: [USD, ILS]
+            googleGroupEmail:
+              type: string
+              format: email
+            active:
+              type: boolean
+            order:
+              type: integer
+            features:
+              type: array
+              items:
+                type: string
+            featuresHe:
+              type: array
+              items:
+                type: string
+
+    AdminServiceResponse:
+      type: object
+      required: [success, message, serviceId]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        serviceId:
+          type: string
+
+    ManualPaymentRequest:
+      type: object
+      required:
+        - userEmail
+        - serviceId
+        - amount
+        - durationMonths
+        - paymentMethod
+        - processedByUid
+        - processedByEmail
+      properties:
+        userEmail:
+          type: string
+          format: email
+        serviceId:
+          type: string
+        amount:
+          type: number
+          minimum: 0
+        durationMonths:
+          type: integer
+          minimum: 1
+          maximum: 120
+        paymentMethod:
+          $ref: '#/components/schemas/ManualPaymentMethod'
+        notes:
+          type: string
+        receiptNumber:
+          type: string
+        processedByUid:
+          type: string
+        processedByEmail:
+          type: string
+          format: email
+
+    ManualPaymentResponse:
+      type: object
+      required: [success, message, transactionId, userId]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        transactionId:
+          type: string
+        userId:
+          type: string
+
+    ManualTransaction:
+      type: object
+      required:
+        - id
+        - userId
+        - userEmail
+        - serviceId
+        - serviceName
+        - amount
+        - currency
+        - durationMonths
+        - startDate
+        - endDate
+        - paymentMethod
+        - processedBy
+        - processedByEmail
+        - createdAt
+      properties:
+        id:
+          type: string
+        userId:
+          type: string
+        userEmail:
+          type: string
+          format: email
+        serviceId:
+          type: string
+        serviceName:
+          type: string
+        amount:
+          type: number
+        currency:
+          type: string
+        durationMonths:
+          type: integer
+        startDate:
+          type: string
+          format: date-time
+        endDate:
+          type: string
+          format: date-time
+        notes:
+          type: string
+        paymentMethod:
+          type: string
+        receiptNumber:
+          type: string
+        processedBy:
+          type: string
+        processedByEmail:
+          type: string
+          format: email
+        createdAt:
+          type: string
+          format: date-time
+
+    TransactionsResponse:
+      type: object
+      required: [transactions]
+      properties:
+        transactions:
+          type: array
+          items:
+            $ref: '#/components/schemas/ManualTransaction'
+
+    CancelSubscriptionRequest:
+      type: object
+      required: [uid, serviceId]
+      properties:
+        uid:
+          type: string
+        serviceId:
+          type: string
+        reason:
+          type: string
+
+    ManageGroupRequest:
+      type: object
+      required: [uid, serviceId, action]
+      properties:
+        uid:
+          type: string
+        serviceId:
+          type: string
+        action:
+          type: string
+          enum: [add, remove]
+
+    MigrationResponse:
+      type: object
+      required: [success, message, migrated, skipped, total]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        migrated:
+          type: integer
+        skipped:
+          type: integer
+        total:
+          type: integer
+
+    SeedServicesResponse:
+      type: object
+      required: [success, message, services]
+      properties:
+        success:
+          type: boolean
+        message:
+          type: string
+        services:
+          type: array
+          items:
+            type: string
+
+    # -------------------------------------------------------------------------
+    # Download Schemas
+    # -------------------------------------------------------------------------
+    Platform:
+      type: string
+      enum: [youtube, spotify, soundcloud, bandcamp, unknown]
+
+    DownloadType:
+      type: string
+      enum: [single, album, playlist]
+
+    JobStatus:
+      type: string
+      enum: [queued, downloading, processing, complete, error]
+
+    DownloadMetadata:
+      type: object
+      properties:
+        title:
+          type: string
+        artist:
+          type: string
+        album:
+          type: string
+        trackCount:
+          type: integer
+
+    DownloadFile:
+      type: object
+      required: [name, path, size]
+      properties:
+        name:
+          type: string
+        path:
+          type: string
+        size:
+          type: integer
+          description: File size in bytes
+
+    DownloadJob:
+      type: object
+      required:
+        - jobId
+        - uid
+        - url
+        - platform
+        - type
+        - status
+        - progress
+        - message
+        - metadata
+        - files
+        - transliterateEnabled
+        - createdAt
+      properties:
+        jobId:
+          type: string
+        uid:
+          type: string
+        url:
+          type: string
+          format: uri
+        platform:
+          $ref: '#/components/schemas/Platform'
+        type:
+          $ref: '#/components/schemas/DownloadType'
+        status:
+          $ref: '#/components/schemas/JobStatus'
+        progress:
+          type: integer
+          minimum: 0
+          maximum: 100
+        message:
+          type: string
+        metadata:
+          $ref: '#/components/schemas/DownloadMetadata'
+        files:
+          type: array
+          items:
+            $ref: '#/components/schemas/DownloadFile'
+        downloadUrl:
+          type: string
+          format: uri
+        expiresAt:
+          type: string
+          format: date-time
+        transliterateEnabled:
+          type: boolean
+        createdAt:
+          type: string
+          format: date-time
+        completedAt:
+          type: string
+          format: date-time
+        error:
+          type: string
+
+    SubmitDownloadRequest:
+      type: object
+      required: [uid, url]
+      properties:
+        uid:
+          type: string
+        url:
+          type: string
+          format: uri
+        transliterate:
+          type: boolean
+          default: false
+
+    SubmitDownloadResponse:
+      type: object
+      required: [success, jobId, message]
+      properties:
+        success:
+          type: boolean
+        jobId:
+          type: string
+        estimatedTracks:
+          type: integer
+        message:
+          type: string
+
+    SubscriptionRequiredError:
+      type: object
+      required: [error, requiresSubscription]
+      properties:
+        error:
+          type: string
+        requiresSubscription:
+          type: boolean
+          const: true
+
+    DownloadJobResponse:
+      type: object
+      required: [job]
+      properties:
+        job:
+          $ref: '#/components/schemas/DownloadJob'
+
+    DownloadHistoryResponse:
+      type: object
+      required: [jobs]
+      properties:
+        jobs:
+          type: array
+          items:
+            $ref: '#/components/schemas/DownloadJob'

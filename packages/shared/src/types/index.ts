@@ -1,6 +1,12 @@
 /**
  * Shared Type Definitions
  * Used by both frontend and backend for type safety
+ *
+ * NOTE: API types are now defined in packages/api-spec/openapi.yaml
+ * The webapp uses generated types from packages/webapp/src/api/schema.d.ts
+ *
+ * This file is kept for backward compatibility with the functions package.
+ * New API types should be added to the OpenAPI spec first.
  */
 
 import { Timestamp } from 'firebase/firestore';

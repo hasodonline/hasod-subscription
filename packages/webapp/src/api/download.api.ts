@@ -1,17 +1,25 @@
 /**
  * Download API Client
  * Handles communication with the download service backend
+ *
+ * Types are generated from OpenAPI spec - see packages/api-spec/openapi.yaml
  */
 
 import apiClient from './client';
 import { getFirestore, doc, onSnapshot, Unsubscribe } from 'firebase/firestore';
-import type {
-  SubmitDownloadRequest,
-  SubmitDownloadResponse,
-  JobStatusResponse,
-  DownloadHistoryResponse,
-  DownloadJob,
-} from '../types/download';
+import type { components } from './schema';
+
+// Re-export types for convenience
+export type SubmitDownloadRequest = components['schemas']['SubmitDownloadRequest'];
+export type SubmitDownloadResponse = components['schemas']['SubmitDownloadResponse'];
+export type DownloadJob = components['schemas']['DownloadJob'];
+export type DownloadJobResponse = components['schemas']['DownloadJobResponse'];
+export type DownloadHistoryResponse = components['schemas']['DownloadHistoryResponse'];
+export type DownloadMetadata = components['schemas']['DownloadMetadata'];
+export type DownloadFile = components['schemas']['DownloadFile'];
+export type Platform = components['schemas']['Platform'];
+export type DownloadType = components['schemas']['DownloadType'];
+export type JobStatus = components['schemas']['JobStatus'];
 
 const db = getFirestore();
 
@@ -32,7 +40,7 @@ export const submitDownload = async (
  * Get the status of a download job
  */
 export const getJobStatus = async (jobId: string, uid: string): Promise<DownloadJob> => {
-  const response = await apiClient.get<JobStatusResponse>(`/download/status/${jobId}`, {
+  const response = await apiClient.get<DownloadJobResponse>(`/download/status/${jobId}`, {
     params: { uid },
   });
   return response.data.job;
@@ -142,11 +150,11 @@ export const formatFileSize = (bytes: number): string => {
 /**
  * Calculate time remaining until expiry
  */
-export const getTimeRemaining = (expiresAt: any): string => {
+export const getTimeRemaining = (expiresAt: string | undefined): string => {
   if (!expiresAt) return '';
 
   const now = Date.now();
-  const expiry = expiresAt.toDate ? expiresAt.toDate().getTime() : new Date(expiresAt).getTime();
+  const expiry = new Date(expiresAt).getTime();
   const diff = expiry - now;
 
   if (diff <= 0) return 'Expired';
@@ -164,7 +172,7 @@ export const getTimeRemaining = (expiresAt: any): string => {
 /**
  * Get status badge color
  */
-export const getStatusColor = (status: string): string => {
+export const getStatusColor = (status: JobStatus): string => {
   switch (status) {
     case 'complete':
       return 'green';

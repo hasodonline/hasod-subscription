@@ -1,0 +1,20 @@
+{
+  "name": "@hasod/api-spec",
+  "version": "1.0.0",
+  "private": true,
+  "description": "OpenAPI 3.1 specification for Hasod Subscription API",
+  "scripts": {
+    "validate": "redocly lint openapi.yaml",
+    "generate:ts": "openapi-typescript openapi.yaml -o ../webapp/src/api/schema.d.ts",
+    "generate:all": "npm run generate:ts",
+    "docs": "redocly preview-docs openapi.yaml",
+    "build-docs": "redocly build-docs openapi.yaml -o docs/index.html"
+  },
+  "devDependencies": {
+    "@redocly/cli": "^1.25.15",
+    "openapi-typescript": "^7.4.4"
+  },
+  "dependencies": {
+    "yaml": "^2.8.2"
+  }
+}

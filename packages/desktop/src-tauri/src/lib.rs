@@ -27,6 +27,8 @@ use uuid::Uuid;
 
 // ============================================================================
 // Data Structures
+// API types are defined in packages/api-spec/openapi.yaml
+// Keep these types in sync with the OpenAPI spec
 // ============================================================================
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
