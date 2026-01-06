@@ -1,7 +1,7 @@
 {
   "name": "@hasod/desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Hasod Downloads - Desktop app for YouTube, Spotify, SoundCloud downloads",
   "type": "module",
   "scripts": {

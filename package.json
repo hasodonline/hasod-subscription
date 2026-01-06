@@ -21,7 +21,8 @@
     "functions:serve": "firebase emulators:start --only functions",
     "deploy": "firebase deploy --only hosting,functions,firestore",
     "seed-services": "tsc --project scripts/tsconfig.json && node scripts/dist/seed-services.js",
-    "migrate-data": "tsc --project scripts/tsconfig.json && node scripts/dist/migrate-data.js"
+    "migrate-data": "tsc --project scripts/tsconfig.json && node scripts/dist/migrate-data.js",
+    "desktop:version": "./scripts/bump-desktop-version.sh"
   },
   "devDependencies": {
     "firebase-admin": "^13.6.0",

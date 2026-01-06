@@ -1,0 +1,35 @@
+{
+  "version": "0.1.0",
+  "releaseDate": "2026-01-06T00:00:00Z",
+  "releaseUrl": "https://github.com/hasod-online/hasod-subscription/releases",
+  "downloads": {
+    "macOS-arm64": {
+      "name": "macOS (Apple Silicon)",
+      "description": "For M1, M2, M3 Macs",
+      "url": "/downloads/HasodDownloads.dmg",
+      "filename": "Hasod-Downloads_0.1.0_macOS-arm64.dmg",
+      "size": "~25 MB"
+    },
+    "macOS-x64": {
+      "name": "macOS (Intel)",
+      "description": "For Intel-based Macs",
+      "url": "",
+      "filename": "",
+      "size": "Coming soon"
+    },
+    "Windows-x64": {
+      "name": "Windows",
+      "description": "Windows 10/11 (64-bit)",
+      "url": "",
+      "filename": "",
+      "size": "Coming soon"
+    },
+    "Linux-x64": {
+      "name": "Linux",
+      "description": "AppImage (Universal)",
+      "url": "",
+      "filename": "",
+      "size": "Coming soon"
+    }
+  }
+}

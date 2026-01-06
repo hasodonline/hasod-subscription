@@ -3,24 +3,94 @@
  * Desktop app download page for Hasod Downloads
  */
 
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
+
+interface PlatformDownload {
+  name: string;
+  description: string;
+  url: string;
+  filename: string;
+  size: string;
+}
+
+interface DesktopRelease {
+  version: string;
+  releaseDate: string;
+  releaseUrl: string;
+  downloads: {
+    'macOS-arm64': PlatformDownload;
+    'macOS-x64': PlatformDownload;
+    'Windows-x64': PlatformDownload;
+    'Linux-x64': PlatformDownload;
+  };
+}
+
+type PlatformKey = keyof DesktopRelease['downloads'];
+
+const platformIcons: Record<PlatformKey, JSX.Element> = {
+  'macOS-arm64': (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+    </svg>
+  ),
+  'macOS-x64': (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
+    </svg>
+  ),
+  'Windows-x64': (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M3 5.5L10.5 4.5V11.5H3V5.5ZM3 18.5V12.5H10.5V19.5L3 18.5ZM11.5 4.3L21 3V11.5H11.5V4.3ZM21 12.5V21L11.5 19.7V12.5H21Z"/>
+    </svg>
+  ),
+  'Linux-x64': (
+    <svg viewBox="0 0 24 24" fill="currentColor">
+      <path d="M12.504 0c-.155 0-.311.002-.465.006-.763.019-1.541.103-2.298.283-.757.18-1.496.46-2.184.844-.687.385-1.328.868-1.889 1.44-.561.573-1.045 1.233-1.426 1.962-.381.729-.661 1.524-.823 2.368-.163.844-.208 1.729-.136 2.617.072.889.264 1.782.567 2.641.303.859.717 1.687 1.228 2.446.512.76 1.12 1.456 1.812 2.051.692.595 1.466 1.088 2.303 1.456.836.368 1.736.611 2.666.71.931.099 1.887.055 2.823-.131.935-.186 1.85-.521 2.702-.993.851-.473 1.639-1.082 2.324-1.803.685-.722 1.27-1.555 1.723-2.466.454-.911.779-1.899.95-2.927.172-1.029.192-2.098.058-3.148-.133-1.049-.42-2.082-.849-3.047-.429-.965-.999-1.862-1.69-2.649-.691-.787-1.502-1.463-2.396-1.994-.894-.531-1.871-.919-2.89-1.133-.51-.107-1.03-.178-1.554-.209-.262-.016-.525-.022-.787-.018zm.26 1.693c.68.005 1.361.073 2.027.206.665.133 1.316.33 1.934.59.618.26 1.204.582 1.741.96.537.379 1.027.813 1.454 1.295.427.482.791 1.01 1.082 1.572.291.563.508 1.16.646 1.777.137.617.194 1.254.17 1.886-.024.632-.13 1.259-.316 1.863-.186.604-.452 1.186-.787 1.727-.336.542-.74 1.044-1.201 1.494-.462.45-.98.846-1.54 1.175-.561.329-1.163.59-1.792.778-.629.188-1.284.3-1.946.334-.662.034-1.33-.01-1.986-.13-.656-.119-1.299-.314-1.912-.58-.613-.267-1.195-.604-1.73-1.003-.535-.4-1.023-.861-1.45-1.375-.427-.514-.793-1.08-1.087-1.683-.294-.604-.516-1.244-.66-1.9-.145-.655-.212-1.326-.2-1.996.013-.67.107-1.337.278-1.984.172-.648.422-1.276.744-1.867.322-.59.714-1.143 1.166-1.642.453-.5.965-.945 1.524-1.325.56-.38 1.165-.694 1.803-.935.638-.241 1.307-.41 1.99-.499.342-.045.686-.069 1.03-.071zm-.334 1.64c-.393.015-.782.072-1.16.17-.378.098-.746.237-1.094.415-.348.179-.677.397-.978.649-.301.251-.576.536-.816.847-.241.311-.446.648-.611 1.003-.165.355-.29.726-.372 1.107-.081.381-.119.77-.112 1.159.007.388.059.776.155 1.151.095.376.233.74.411 1.081.179.341.396.66.648.947.252.288.539.544.853.763.314.219.654.4 1.012.539.358.139.732.234 1.114.284.381.05.769.053 1.151.011.382-.043.759-.132 1.119-.265.36-.133.704-.31 1.022-.524.317-.214.608-.466.866-.748.257-.283.48-.595.663-.93.183-.334.326-.691.427-1.06.1-.37.158-.751.171-1.135.014-.384-.017-.77-.092-1.147-.075-.376-.194-.743-.354-1.091-.16-.348-.361-.677-.597-.978-.236-.3-.507-.572-.806-.808-.299-.236-.625-.436-.969-.594-.344-.158-.705-.274-1.076-.345-.37-.071-.749-.097-1.125-.078z"/>
+    </svg>
+  ),
+};
 
 const Download: React.FC = () => {
   const { currentUser, userDoc } = useAuth();
   const navigate = useNavigate();
+  const [release, setRelease] = useState<DesktopRelease | null>(null);
+  const [loading, setLoading] = useState(true);
 
   const hasSubscription =
     userDoc?.services?.['hasod-downloader']?.status === 'active';
 
-  const handleDownload = () => {
-    window.open('/downloads/HasodDownloads.dmg', '_blank');
+  useEffect(() => {
+    fetch('/desktop-releases.json')
+      .then((res) => res.json())
+      .then((data: DesktopRelease) => {
+        setRelease(data);
+        setLoading(false);
+      })
+      .catch(() => setLoading(false));
+  }, []);
+
+  const handleDownload = (url: string) => {
+    if (url) {
+      window.open(url, '_blank');
+    }
+  };
+
+  const formatDate = (dateStr: string) => {
+    const date = new Date(dateStr);
+    return date.toLocaleDateString('en-US', {
+      year: 'numeric',
+      month: 'short',
+      day: 'numeric',
+    });
   };
 
   if (!currentUser) {
     return null;
   }
+
+  const platforms: PlatformKey[] = ['macOS-arm64', 'macOS-x64', 'Windows-x64', 'Linux-x64'];
 
   return (
     <div className="download-page">
@@ -44,31 +114,60 @@ const Download: React.FC = () => {
           <p className="subtitle">
             Download high-quality music from YouTube, Spotify, SoundCloud & more
           </p>
-          <div className="version-badge">Version 0.1.0</div>
+          <div className="version-info">
+            <span className="version-badge">
+              {loading ? 'Loading...' : `Version ${release?.version || '0.1.0'}`}
+            </span>
+            {release && (
+              <span className="release-date">
+                Released {formatDate(release.releaseDate)}
+              </span>
+            )}
+          </div>
         </div>
       </div>
 
       <div className="download-section">
         {hasSubscription ? (
-          <div className="download-card">
-            <div className="platform-info">
-              <svg className="platform-icon" viewBox="0 0 24 24" fill="currentColor">
-                <path d="M18.71 19.5c-.83 1.24-1.71 2.45-3.05 2.47-1.34.03-1.77-.79-3.29-.79-1.53 0-2 .77-3.27.82-1.31.05-2.3-1.32-3.14-2.53C4.25 17 2.94 12.45 4.7 9.39c.87-1.52 2.43-2.48 4.12-2.51 1.28-.02 2.5.87 3.29.87.78 0 2.26-1.07 3.81-.91.65.03 2.47.26 3.64 1.98-.09.06-2.17 1.28-2.15 3.81.03 3.02 2.65 4.03 2.68 4.04-.03.07-.42 1.44-1.38 2.83M13 3.5c.73-.83 1.94-1.46 2.94-1.5.13 1.17-.34 2.35-1.04 3.19-.69.85-1.83 1.51-2.95 1.42-.15-1.15.41-2.35 1.05-3.11z"/>
-              </svg>
-              <div className="platform-text">
-                <span className="platform-name">macOS</span>
-                <span className="platform-arch">Apple Silicon (M1/M2/M3)</span>
-              </div>
-            </div>
-            <button className="download-button" onClick={handleDownload}>
-              <svg className="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7,10 12,15 17,10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              Download for Mac
-            </button>
-            <span className="file-info">DMG installer • ~93 MB</span>
+          <div className="downloads-grid">
+            {platforms.map((platformKey) => {
+              const platform = release?.downloads[platformKey];
+              const isAvailable = platform?.url && platform.url.length > 0;
+              return (
+                <div
+                  key={platformKey}
+                  className={`download-card ${!isAvailable ? 'coming-soon' : ''}`}
+                >
+                  <div className="platform-info">
+                    <div className="platform-icon">
+                      {platformIcons[platformKey]}
+                    </div>
+                    <div className="platform-text">
+                      <span className="platform-name">{platform?.name || platformKey}</span>
+                      <span className="platform-arch">{platform?.description}</span>
+                    </div>
+                  </div>
+                  {isAvailable ? (
+                    <>
+                      <button
+                        className="download-button"
+                        onClick={() => handleDownload(platform.url)}
+                      >
+                        <svg className="download-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                          <polyline points="7,10 12,15 17,10" />
+                          <line x1="12" y1="15" x2="12" y2="3" />
+                        </svg>
+                        Download
+                      </button>
+                      <span className="file-info">{platform.size}</span>
+                    </>
+                  ) : (
+                    <div className="coming-soon-badge">Coming Soon</div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         ) : (
           <div className="subscription-card">
@@ -137,19 +236,22 @@ const Download: React.FC = () => {
         <h2>System Requirements</h2>
         <div className="requirements-card">
           <div className="requirement">
-            <span className="req-label">Operating System</span>
-            <span className="req-value">macOS 11.0 (Big Sur) or later</span>
+            <span className="req-label">macOS</span>
+            <span className="req-value">10.15 (Catalina) or later</span>
           </div>
           <div className="requirement">
-            <span className="req-label">Architecture</span>
-            <span className="req-value">Apple Silicon (M1, M2, M3)</span>
+            <span className="req-label">Windows</span>
+            <span className="req-value">Windows 10 or later (64-bit)</span>
+          </div>
+          <div className="requirement">
+            <span className="req-label">Linux</span>
+            <span className="req-value">Ubuntu 20.04+ / Fedora 35+</span>
           </div>
           <div className="requirement">
             <span className="req-label">Disk Space</span>
-            <span className="req-value">~200 MB (including dependencies)</span>
+            <span className="req-value">~200 MB</span>
           </div>
         </div>
-        <p className="coming-soon">Intel Mac & Windows versions coming soon</p>
       </div>
 
       <style>{`
@@ -207,6 +309,13 @@ const Download: React.FC = () => {
           margin-right: auto;
         }
 
+        .version-info {
+          display: flex;
+          flex-direction: column;
+          align-items: center;
+          gap: 8px;
+        }
+
         .version-badge {
           display: inline-block;
           padding: 6px 16px;
@@ -217,21 +326,46 @@ const Download: React.FC = () => {
           border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
+        .release-date {
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.5);
+        }
+
         .download-section {
           padding: 0 32px 60px;
           display: flex;
           justify-content: center;
         }
 
+        .downloads-grid {
+          display: grid;
+          grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+          gap: 24px;
+          max-width: 1200px;
+          width: 100%;
+        }
+
         .download-card {
           background: rgba(255, 255, 255, 0.05);
           border: 1px solid rgba(255, 255, 255, 0.1);
           border-radius: 20px;
-          padding: 40px;
+          padding: 32px;
           text-align: center;
           backdrop-filter: blur(10px);
-          max-width: 400px;
-          width: 100%;
+          transition: all 0.3s ease;
+        }
+
+        .download-card:hover {
+          background: rgba(255, 255, 255, 0.08);
+          transform: translateY(-4px);
+        }
+
+        .download-card.coming-soon {
+          opacity: 0.6;
+        }
+
+        .download-card.coming-soon:hover {
+          transform: none;
         }
 
         .platform-info {
@@ -239,13 +373,18 @@ const Download: React.FC = () => {
           align-items: center;
           justify-content: center;
           gap: 16px;
-          margin-bottom: 32px;
+          margin-bottom: 24px;
         }
 
         .platform-icon {
-          width: 48px;
-          height: 48px;
+          width: 40px;
+          height: 40px;
           color: #fff;
+        }
+
+        .platform-icon svg {
+          width: 100%;
+          height: 100%;
         }
 
         .platform-text {
@@ -254,36 +393,36 @@ const Download: React.FC = () => {
 
         .platform-name {
           display: block;
-          font-size: 24px;
+          font-size: 18px;
           font-weight: 600;
           color: #fff;
         }
 
         .platform-arch {
           display: block;
-          font-size: 14px;
+          font-size: 12px;
           color: rgba(255, 255, 255, 0.6);
         }
 
         .download-button {
           display: inline-flex;
           align-items: center;
-          gap: 12px;
-          padding: 16px 40px;
-          font-size: 18px;
+          gap: 10px;
+          padding: 12px 32px;
+          font-size: 16px;
           font-weight: 600;
           color: #fff;
           background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
           border: none;
-          border-radius: 12px;
+          border-radius: 10px;
           cursor: pointer;
           transition: all 0.3s ease;
-          box-shadow: 0 10px 30px rgba(102, 126, 234, 0.4);
+          box-shadow: 0 8px 24px rgba(102, 126, 234, 0.4);
         }
 
         .download-button:hover {
           transform: translateY(-2px);
-          box-shadow: 0 15px 40px rgba(102, 126, 234, 0.5);
+          box-shadow: 0 12px 32px rgba(102, 126, 234, 0.5);
         }
 
         .download-button:active {
@@ -291,15 +430,26 @@ const Download: React.FC = () => {
         }
 
         .download-icon {
-          width: 24px;
-          height: 24px;
+          width: 20px;
+          height: 20px;
         }
 
         .file-info {
           display: block;
-          margin-top: 16px;
-          font-size: 14px;
+          margin-top: 12px;
+          font-size: 13px;
           color: rgba(255, 255, 255, 0.5);
+        }
+
+        .coming-soon-badge {
+          display: inline-block;
+          padding: 10px 24px;
+          font-size: 14px;
+          font-weight: 500;
+          color: rgba(255, 255, 255, 0.5);
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px dashed rgba(255, 255, 255, 0.2);
+          border-radius: 10px;
         }
 
         .subscription-card {
@@ -456,12 +606,6 @@ const Download: React.FC = () => {
           color: #fff;
           font-size: 14px;
           font-weight: 500;
-        }
-
-        .coming-soon {
-          color: rgba(255, 255, 255, 0.4);
-          font-size: 14px;
-          font-style: italic;
         }
 
         @media (max-width: 768px) {

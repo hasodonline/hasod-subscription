@@ -1,6 +1,6 @@
 [package]
 name = "hasod-downloads"
-version = "0.1.0"
+version = "0.1.1"
 description = "Hasod Downloads - Music downloader with license validation"
 authors = ["Hasod Online"]
 edition = "2021"
