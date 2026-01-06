@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
+import { useLanguage } from './i18n';
 import './FloatingButton.css';
 
 // Types matching Rust backend
@@ -79,6 +80,7 @@ function _detectService(url: string): string {
 void _detectService; // Suppress unused warning
 
 function FloatingButton() {
+  const { t } = useLanguage();
   const [isDragOver, setIsDragOver] = useState(false);
   const [queueStatus, setQueueStatus] = useState<QueueStatus | null>(null);
   const [showPanel, setShowPanel] = useState(false);
@@ -272,7 +274,7 @@ function FloatingButton() {
           ) : queuedCount > 0 ? (
             <>
               <div className="queue-count">{queuedCount}</div>
-              <div className="queue-label">in queue</div>
+              <div className="queue-label">{t.floating.inQueue}</div>
             </>
           ) : recentlyAdded ? (
             <div className="success-icon">✓</div>

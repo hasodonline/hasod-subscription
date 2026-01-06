@@ -697,3 +697,105 @@ details.progress-box[open] summary {
 ::-webkit-scrollbar-thumb:hover {
   background: #9e9e9e;
 }
+
+/* Language Switcher */
+.language-switcher {
+  position: absolute;
+  top: 20px;
+  left: 20px;
+  display: flex;
+  gap: 4px;
+  background: rgba(0, 0, 0, 0.05);
+  border-radius: 8px;
+  padding: 4px;
+  z-index: 10;
+}
+
+.lang-btn {
+  padding: 6px 12px;
+  border: none;
+  background: transparent;
+  color: #666;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s;
+}
+
+.lang-btn:hover {
+  background: rgba(33, 150, 243, 0.1);
+  color: #2196F3;
+}
+
+.lang-btn.active {
+  background: #2196F3;
+  color: white;
+}
+
+/* RTL Support */
+html[dir="rtl"] .language-switcher {
+  left: auto;
+  right: 20px;
+}
+
+html[dir="rtl"] .floating-toggle {
+  right: auto;
+  left: 20px;
+}
+
+html[dir="rtl"] .status-details {
+  text-align: right;
+}
+
+html[dir="rtl"] .actions {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .info-box ol,
+html[dir="rtl"] .info-box ul {
+  margin-left: 0;
+  margin-right: 20px;
+}
+
+html[dir="rtl"] .download-form {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .queue-item {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .job-info {
+  text-align: right;
+}
+
+html[dir="rtl"] .job-progress {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .queue-header {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .queue-stats {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .services-banner {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .service-chip {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .tab-badge {
+  margin-left: 0;
+  margin-right: 8px;
+}
+
+html[dir="rtl"] .google-btn svg {
+  margin-right: 0;
+  margin-left: 8px;
+}

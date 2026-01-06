@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
+import { LanguageProvider } from "./i18n";
 import App from "./App";
 import FloatingButton from "./FloatingButton";
 
@@ -11,6 +12,8 @@ const RootComponent = windowType === 'floating' ? FloatingButton : App;
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
-    <RootComponent />
+    <LanguageProvider>
+      <RootComponent />
+    </LanguageProvider>
   </React.StrictMode>,
 );

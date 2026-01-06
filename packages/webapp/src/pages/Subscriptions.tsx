@@ -3,33 +3,22 @@
  * Multi-service subscription management
  */
 
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { UserProfile, getServiceSubscription } from '../types/user';
-import { Service } from '../types/service';
 import ServiceCard from '../components/ServiceCard';
 import { useServices } from '../hooks/useServices';
 import { createSubscription } from '../api/subscriptions.api';
+import { useLanguage } from '../i18n/LanguageContext';
 
 type Props = {
   uid: string;
   profile: UserProfile | null;
 };
 
-const MANUAL_PAYMENT_CONTACT = `לתשלום ידני, צור קשר:
-
-📞 טלפון: 054-123-4567
-📧 אימייל: hasod@hasodonline.com
-
-אפשרויות תשלום:
-• מזומן
-• העברה בנקאית
-• ביט/פייבוקס
-
-לאחר התשלום, המנהל יפעיל את השירות עבורך תוך 24 שעות.`;
-
 export default function Subscriptions({ uid, profile }: Props) {
   const { services, loading: servicesLoading } = useServices(false); // Get all services including inactive
   const [loadingServiceId, setLoadingServiceId] = useState<string | null>(null);
+  const { t, language } = useLanguage();
 
   async function handleSubscribePayPal(serviceId: string) {
     setLoadingServiceId(serviceId);
@@ -38,7 +27,7 @@ export default function Subscriptions({ uid, profile }: Props) {
       const service = services.find(s => s.id === serviceId);
 
       if (!service?.paypalPlanId) {
-        alert('שירות זה אינו זמין כרגע דרך PayPal. אנא השתמש בתשלום ידני.');
+        alert(t.subscriptions.errors.paypalNotAvailable);
         return;
       }
 
@@ -48,16 +37,16 @@ export default function Subscriptions({ uid, profile }: Props) {
         // Redirect to PayPal for approval
         window.location.href = result.approvalUrl;
       } else {
-        alert('לא התקבל קישור לאישור מ-PayPal. אנא נסה שוב.');
+        alert(t.subscriptions.errors.noApprovalUrl);
       }
     } catch (error: any) {
       console.error('Error creating subscription:', error);
 
       if (error.code === 'ERR_NETWORK') {
-        alert('שירות המנויים אינו זמין כרגע. אנא נסה שוב מאוחר יותר.');
+        alert(t.subscriptions.errors.serviceUnavailable);
       } else {
-        const errorMsg = error.response?.data?.error || error.message || 'שגיאה לא ידועה';
-        alert('שגיאה ביצירת מנוי: ' + errorMsg);
+        const errorMsg = error.response?.data?.error || error.message || t.common.error;
+        alert(t.subscriptions.errors.createSubscription + ' ' + errorMsg);
       }
     } finally {
       setLoadingServiceId(null);
@@ -66,24 +55,25 @@ export default function Subscriptions({ uid, profile }: Props) {
 
   function handleSubscribeManual(serviceId: string) {
     const service = services.find(s => s.id === serviceId);
-    alert(MANUAL_PAYMENT_CONTACT + `\n\nשירות: ${service?.nameHe || serviceId}`);
+    const serviceName = language === 'he' ? service?.nameHe : service?.name;
+    alert(t.subscriptions.manualPaymentContact + `\n\nService: ${serviceName || serviceId}`);
   }
 
   if (servicesLoading) {
     return (
       <div className="subscriptions-page">
-        <div className="loading">טוען שירותים...</div>
+        <div className="loading">{t.subscriptions.loadingServices}</div>
       </div>
     );
   }
 
   return (
     <div className="subscriptions-page">
-      <h2>מנויי הסוד אונליין</h2>
+      <h2>{t.subscriptions.title}</h2>
 
       {services.length === 0 ? (
         <div className="no-services">
-          <p>אין שירותים זמינים כרגע</p>
+          <p>{t.subscriptions.noServices}</p>
         </div>
       ) : (
         <div className="services-grid">
@@ -98,6 +88,7 @@ export default function Subscriptions({ uid, profile }: Props) {
                 onSubscribePayPal={handleSubscribePayPal}
                 onSubscribeManual={handleSubscribeManual}
                 loading={loadingServiceId === service.id}
+                language={language}
               />
             );
           })}
@@ -106,7 +97,7 @@ export default function Subscriptions({ uid, profile }: Props) {
 
       <div className="subscriptions-footer">
         <p className="help-text">
-          זקוק לעזרה? צור קשר: hasod@hasodonline.com
+          {t.subscriptions.helpText} hasod@hasodonline.com
         </p>
       </div>
     </div>

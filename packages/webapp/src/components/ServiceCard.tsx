@@ -4,6 +4,8 @@
  */
 
 import { Service, UserServiceSubscription, hasActiveSubscription, getServiceStatus } from '../types/service';
+import { useLanguage } from '../i18n/LanguageContext';
+import type { Language } from '../i18n/translations';
 
 interface ServiceCardProps {
   service: Service;
@@ -12,6 +14,7 @@ interface ServiceCardProps {
   onSubscribeManual: (serviceId: string) => void;
   onManageSubscription?: (serviceId: string) => void;
   loading?: boolean;
+  language?: Language;
 }
 
 export default function ServiceCard({
@@ -20,32 +23,43 @@ export default function ServiceCard({
   onSubscribePayPal,
   onSubscribeManual,
   onManageSubscription,
-  loading = false
+  loading = false,
+  language: langProp
 }: ServiceCardProps) {
+  const { t, language: contextLang } = useLanguage();
+  const lang = langProp || contextLang;
+  const isHebrew = lang === 'he';
+
   const status = getServiceStatus(subscription);
   const isActive = hasActiveSubscription(subscription);
   const isPending = status === 'pending';
   const isCanceled = status === 'canceled' || status === 'expired';
 
+  // Get localized service content
+  const serviceName = isHebrew ? service.nameHe : service.name;
+  const serviceDescription = isHebrew ? service.descriptionHe : service.description;
+  const serviceFeatures = isHebrew ? service.featuresHe : service.features;
+
   const getStatusBadge = () => {
-    const statusMap: Record<string, { text: string; className: string }> = {
-      active: { text: 'פעיל', className: 'badge-success' },
-      pending: { text: 'ממתין לאישור', className: 'badge-warning' },
-      canceled: { text: 'בוטל', className: 'badge-danger' },
-      expired: { text: 'פג תוקף', className: 'badge-danger' },
-      suspended: { text: 'מושהה', className: 'badge-warning' },
-      none: { text: 'לא פעיל', className: 'badge-secondary' }
+    const statusClasses: Record<string, string> = {
+      active: 'badge-success',
+      pending: 'badge-warning',
+      canceled: 'badge-danger',
+      expired: 'badge-danger',
+      suspended: 'badge-warning',
+      none: 'badge-secondary'
     };
-    const info = statusMap[status] || statusMap['none'];
-    return <span className={`badge ${info.className}`}>{info.text}</span>;
+    const className = statusClasses[status] || statusClasses['none'];
+    const text = t.subscriptions.status[status as keyof typeof t.subscriptions.status] || t.subscriptions.status.none;
+    return <span className={`badge ${className}`}>{text}</span>;
   };
 
   const getPaymentMethodBadge = () => {
     if (!subscription) return null;
 
     const methodMap = {
-      paypal: { text: 'PayPal', icon: '💳' },
-      manual: { text: 'תשלום ידני', icon: '💰' }
+      paypal: { text: t.subscriptions.paymentMethod.paypal, icon: '💳' },
+      manual: { text: t.subscriptions.paymentMethod.manual, icon: '💰' }
     };
 
     const method = methodMap[subscription.paymentMethod] || methodMap.paypal;
@@ -61,24 +75,24 @@ export default function ServiceCard({
     if (!subscription?.manualEndDate) return null;
 
     const endDate = subscription.manualEndDate.toDate?.() || new Date(subscription.manualEndDate);
-    return endDate.toLocaleDateString('he-IL');
+    return endDate.toLocaleDateString(isHebrew ? 'he-IL' : 'en-US');
   };
 
   return (
     <div className={`service-card ${isActive ? 'active' : ''}`}>
       <div className="service-header">
-        <h3>{service.nameHe}</h3>
+        <h3>{serviceName}</h3>
         <div className="service-badges">
           {getStatusBadge()}
           {getPaymentMethodBadge()}
         </div>
       </div>
 
-      <p className="service-description">{service.descriptionHe}</p>
+      <p className="service-description">{serviceDescription}</p>
 
-      {service.featuresHe && service.featuresHe.length > 0 && (
+      {serviceFeatures && serviceFeatures.length > 0 && (
         <ul className="service-features">
-          {service.featuresHe.map((feature, index) => (
+          {serviceFeatures.map((feature, index) => (
             <li key={index}>✓ {feature}</li>
           ))}
         </ul>
@@ -86,12 +100,12 @@ export default function ServiceCard({
 
       <div className="service-price">
         <span className="price-amount">${service.pricePerMonth}</span>
-        <span className="price-period">/חודש</span>
+        <span className="price-period">{t.subscriptions.perMonth}</span>
       </div>
 
       {subscription?.manualEndDate && (
         <div className="expiry-info">
-          תוקף עד: {formatExpiryDate()}
+          {t.subscriptions.validUntil} {formatExpiryDate()}
         </div>
       )}
 
@@ -99,7 +113,7 @@ export default function ServiceCard({
         {isActive ? (
           <>
             <div className="success-message">
-              ✓ יש לך גישה לשירות זה
+              ✓ {t.subscriptions.hasAccess}
             </div>
             {onManageSubscription && (
               <button
@@ -107,18 +121,18 @@ export default function ServiceCard({
                 className="btn-secondary"
                 disabled={loading}
               >
-                נהל מנוי
+                {t.subscriptions.manageSubscription}
               </button>
             )}
           </>
         ) : isPending ? (
           <div className="warning-message">
-            ממתין לאישור התשלום ב-PayPal
+            {t.subscriptions.waitingPaypal}
           </div>
         ) : isCanceled ? (
           <>
             <div className="info-message">
-              המנוי {status === 'canceled' ? 'בוטל' : 'פג תוקף'}. הירשם שוב לקבל גישה.
+              {status === 'canceled' ? t.subscriptions.subscriptionCanceled : t.subscriptions.subscriptionExpired}
             </div>
             {service.active && (
               <div className="button-group">
@@ -127,14 +141,14 @@ export default function ServiceCard({
                   className="btn-primary"
                   disabled={loading || !service.paypalPlanId}
                 >
-                  {loading ? 'מעבד...' : 'הירשם ב-PayPal'}
+                  {loading ? t.subscriptions.processing : t.subscriptions.subscribePaypal}
                 </button>
                 <button
                   onClick={() => onSubscribeManual(service.id)}
                   className="btn-secondary"
                   disabled={loading}
                 >
-                  תשלום ידני
+                  {t.subscriptions.subscribeManual}
                 </button>
               </div>
             )}
@@ -147,21 +161,21 @@ export default function ServiceCard({
                   onClick={() => onSubscribePayPal(service.id)}
                   className="btn-primary"
                   disabled={loading || !service.paypalPlanId}
-                  title={!service.paypalPlanId ? 'PayPal לא מוגדר לשירות זה' : ''}
+                  title={!service.paypalPlanId ? t.subscriptions.paypalNotConfigured : ''}
                 >
-                  {loading ? 'מעבד...' : 'הירשם ב-PayPal'}
+                  {loading ? t.subscriptions.processing : t.subscriptions.subscribePaypal}
                 </button>
                 <button
                   onClick={() => onSubscribeManual(service.id)}
                   className="btn-secondary"
                   disabled={loading}
                 >
-                  תשלום ידני
+                  {t.subscriptions.subscribeManual}
                 </button>
               </div>
             ) : (
               <div className="info-message">
-                שירות זה יהיה זמין בקרוב
+                {t.subscriptions.comingSoon}
               </div>
             )}
           </>
@@ -170,7 +184,7 @@ export default function ServiceCard({
 
       {subscription?.paypalSubscriptionId && (
         <div className="subscription-id">
-          מזהה מנוי: {subscription.paypalSubscriptionId}
+          {t.subscriptions.subscriptionId} {subscription.paypalSubscriptionId}
         </div>
       )}
     </div>

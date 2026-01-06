@@ -1,6 +1,8 @@
 import { useState, useEffect } from 'react';
 import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
+import { useLanguage } from './i18n';
+import LanguageSwitcher from './components/LanguageSwitcher';
 import './App.css';
 
 interface LicenseStatus {
@@ -72,6 +74,7 @@ const serviceStyles: Record<string, { icon: string; color: string; name: string 
 };
 
 function App() {
+  const { t } = useLanguage();
   const [activeTab, setActiveTab] = useState<'download' | 'license'>('license');
   const [licenseStatus, setLicenseStatus] = useState<LicenseStatus | null>(null);
   const [storedAuth, setStoredAuth] = useState<StoredAuth | null>(null);
@@ -204,29 +207,29 @@ function App() {
 
   const handleGoogleLogin = async () => {
     setLoggingIn(true);
-    setLoginMessage('Opening Google login...');
+    setLoginMessage(t.login.openingGoogle);
 
     try {
       const result = await invoke<OAuthStartResult>('start_google_login');
       console.log('OAuth started, opening browser...');
       await invoke('plugin:opener|open_url', { url: result.auth_url });
 
-      setLoginMessage('Waiting for login in browser...');
+      setLoginMessage(t.login.waitingForLogin);
       const code = await invoke<string>('wait_for_oauth_callback');
       console.log('Got authorization code');
 
-      setLoginMessage('Exchanging tokens...');
+      setLoginMessage(t.login.exchangingTokens);
       const auth = await invoke<StoredAuth>('exchange_oauth_code', { code });
       console.log('Got tokens for:', auth.email);
 
       setStoredAuth(auth);
-      setLoginMessage('Checking license...');
+      setLoginMessage(t.login.checkingLicense);
       await checkLicense(auth.email);
       setLoginMessage('');
     } catch (error) {
       console.error('Login failed:', error);
       setLoginMessage('');
-      alert('Login failed: ' + error);
+      alert(t.login.loginFailed + ' ' + error);
     } finally {
       setLoggingIn(false);
     }
@@ -261,12 +264,12 @@ function App() {
 
   const handleAddToQueue = async () => {
     if (!downloadUrl.trim()) {
-      alert('Please enter a URL');
+      alert(t.common.pleaseEnterUrl);
       return;
     }
 
     if (!licenseStatus?.is_valid) {
-      alert('License not valid. Please login first.');
+      alert(t.common.licenseNotValid);
       return;
     }
 
@@ -278,7 +281,7 @@ function App() {
       setQueueStatus(status);
     } catch (error) {
       console.error('Failed to add to queue:', error);
-      alert('Failed to add to queue: ' + error);
+      alert(t.common.failedToAddToQueue + ' ' + error);
     }
   };
 
@@ -313,12 +316,13 @@ function App() {
     return (
       <div className="app-container">
         <header className="app-header">
-          <h1>Hasod Downloads - מוריד הסוד</h1>
-          <p>Multi-Service Music Downloader</p>
+          <LanguageSwitcher />
+          <h1>{t.header.title}</h1>
+          <p>{t.header.subtitle}</p>
         </header>
         <main className="content">
           <div className="loading-container">
-            <p className="loading">Loading...</p>
+            <p className="loading">{t.common.loading}</p>
           </div>
         </main>
       </div>
@@ -328,18 +332,19 @@ function App() {
   return (
     <div className="app-container">
       <header className="app-header">
-        <h1>Hasod Downloads - מוריד הסוד</h1>
-        <p>Multi-Service Music Downloader</p>
+        <LanguageSwitcher />
+        <h1>{t.header.title}</h1>
+        <p>{t.header.subtitle}</p>
         {licenseStatus?.is_valid && (
           <button
             className={`floating-toggle ${floatingOpen ? 'active' : ''}`}
             onClick={toggleFloatingWindow}
-            title={floatingOpen ? 'Hide Quick Drop Zone' : 'Show Quick Drop Zone'}
+            title={floatingOpen ? t.header.hideDropZoneTooltip : t.header.showDropZoneTooltip}
           >
             <svg viewBox="0 0 24 24" width="20" height="20">
               <path fill="currentColor" d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-1 14l-4-4h3V8h2v4h3l-4 4z"/>
             </svg>
-            {floatingOpen ? 'Hide Drop Zone' : 'Quick Drop'}
+            {floatingOpen ? t.header.hideDropZone : t.header.showDropZone}
           </button>
         )}
       </header>
@@ -350,7 +355,7 @@ function App() {
           onClick={() => setActiveTab('download')}
           disabled={!licenseStatus?.is_valid}
         >
-          Downloads
+          {t.tabs.downloads}
           {queueStatus && (queueStatus.active_count + queueStatus.queued_count) > 0 && (
             <span className="tab-badge">{queueStatus.active_count + queueStatus.queued_count}</span>
           )}
@@ -359,14 +364,14 @@ function App() {
           className={activeTab === 'license' ? 'tab active' : 'tab'}
           onClick={() => setActiveTab('license')}
         >
-          License
+          {t.tabs.license}
         </button>
       </nav>
 
       <main className="content">
         {activeTab === 'license' && (
           <div className="license-tab">
-            <h2>License Status</h2>
+            <h2>{t.license.title}</h2>
 
             {loggingIn && (
               <div className="login-progress">
@@ -378,21 +383,21 @@ function App() {
               <div className={`status-card ${licenseStatus.is_valid ? 'valid' : 'invalid'}`}>
                 <div className="status-header">
                   {licenseStatus.is_valid ? (
-                    <span className="status-badge success">Active</span>
+                    <span className="status-badge success">{t.license.statusActive}</span>
                   ) : (
                     <span className="status-badge error">{licenseStatus.status.replace('_', ' ')}</span>
                   )}
                 </div>
 
                 <div className="status-details">
-                  <p><strong>Device ID:</strong> <code>{licenseStatus.uuid}</code></p>
+                  <p><strong>{t.license.deviceId}</strong> <code>{licenseStatus.uuid}</code></p>
 
                   {storedAuth && (
-                    <p><strong>Email:</strong> {storedAuth.email}</p>
+                    <p><strong>{t.license.email}</strong> {storedAuth.email}</p>
                   )}
 
                   {licenseStatus.expires_at && (
-                    <p><strong>Expires:</strong> {licenseStatus.expires_at}</p>
+                    <p><strong>{t.license.expires}</strong> {licenseStatus.expires_at}</p>
                   )}
 
                   {licenseStatus.error && (
@@ -413,23 +418,23 @@ function App() {
                         <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/>
                         <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/>
                       </svg>
-                      Login with Google
+                      {t.license.loginWithGoogle}
                     </button>
                   )}
 
                   {storedAuth && !licenseStatus.is_valid && licenseStatus.registration_url && (
                     <button onClick={handleRegister} className="btn-secondary">
-                      Subscribe Now
+                      {t.license.subscribeNow}
                     </button>
                   )}
 
                   {storedAuth && (
                     <>
                       <button onClick={handleRefreshAuth} className="btn-secondary" disabled={loading}>
-                        Refresh Status
+                        {t.license.refreshStatus}
                       </button>
                       <button onClick={handleLogout} className="btn-secondary btn-logout">
-                        Logout
+                        {t.license.logout}
                       </button>
                     </>
                   )}
@@ -438,12 +443,12 @@ function App() {
             )}
 
             <div className="info-box">
-              <h3>How It Works</h3>
+              <h3>{t.license.howItWorks}</h3>
               <ol>
-                <li>Click "Login with Google" to sign in securely</li>
-                <li>Your account will be verified via Hasod API</li>
-                <li>If you have active "מוריד הסוד" subscription - Downloads enabled</li>
-                <li>If not - Click "Subscribe Now" to get access</li>
+                <li>{t.license.step1}</li>
+                <li>{t.license.step2}</li>
+                <li>{t.license.step3}</li>
+                <li>{t.license.step4}</li>
               </ol>
             </div>
           </div>
@@ -451,17 +456,17 @@ function App() {
 
         {activeTab === 'download' && (
           <div className="download-tab">
-            <h2>Download Music</h2>
+            <h2>{t.download.title}</h2>
 
             {!licenseStatus?.is_valid && (
               <div className="warning-box">
-                License not active. Please go to License tab and login.
+                {t.download.licenseWarning}
               </div>
             )}
 
             {/* Supported Services Banner */}
             <div className="services-banner">
-              <span className="services-label">Supported:</span>
+              <span className="services-label">{t.download.supported}</span>
               <div className="services-list">
                 {Object.entries(serviceStyles).slice(0, 7).map(([key, style]) => (
                   <span key={key} className="service-chip" title={style.name}>
@@ -478,7 +483,7 @@ function App() {
                 type="text"
                 value={downloadUrl}
                 onChange={(e) => setDownloadUrl(e.target.value)}
-                placeholder="Paste URL from any supported service..."
+                placeholder={t.download.urlPlaceholder}
                 className="url-input"
                 disabled={!licenseStatus?.is_valid}
                 onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()}
@@ -488,7 +493,7 @@ function App() {
                 disabled={!licenseStatus?.is_valid || !downloadUrl.trim()}
                 className="btn-download"
               >
-                Add to Queue
+                {t.download.addToQueue}
               </button>
             </div>
 
@@ -496,24 +501,24 @@ function App() {
             {queueStatus && queueStatus.jobs.length > 0 && (
               <div className="queue-section">
                 <div className="queue-header">
-                  <h3>Download Queue</h3>
+                  <h3>{t.download.queueTitle}</h3>
                   <div className="queue-stats">
                     {queueStatus.active_count > 0 && (
-                      <span className="stat downloading">{queueStatus.active_count} downloading</span>
+                      <span className="stat downloading">{queueStatus.active_count} {t.download.downloading}</span>
                     )}
                     {queueStatus.queued_count > 0 && (
-                      <span className="stat queued">{queueStatus.queued_count} waiting</span>
+                      <span className="stat queued">{queueStatus.queued_count} {t.download.waiting}</span>
                     )}
                     {queueStatus.completed_count > 0 && (
-                      <span className="stat completed">{queueStatus.completed_count} done</span>
+                      <span className="stat completed">{queueStatus.completed_count} {t.download.done}</span>
                     )}
                     {queueStatus.error_count > 0 && (
-                      <span className="stat error">{queueStatus.error_count} failed</span>
+                      <span className="stat error">{queueStatus.error_count} {t.download.failed}</span>
                     )}
                   </div>
                   {queueStatus.completed_count > 0 && (
                     <button className="btn-clear" onClick={handleClearCompleted}>
-                      Clear Completed
+                      {t.download.clearCompleted}
                     </button>
                   )}
                 </div>
@@ -526,7 +531,7 @@ function App() {
                         <span className="job-icon" style={{ color: style.color }}>{style.icon}</span>
                         <div className="job-info">
                           <div className="job-title">
-                            {job.metadata?.title || 'Loading...'}
+                            {job.metadata?.title || t.common.loading}
                           </div>
                           <div className="job-artist">
                             {job.metadata?.artist !== 'Unknown Artist' ? job.metadata?.artist : ''}
@@ -544,13 +549,13 @@ function App() {
                               </div>
                             )}
                             {job.status === 'Queued' && (
-                              <span className="status-label queued">Waiting...</span>
+                              <span className="status-label queued">{t.download.statusQueued}</span>
                             )}
                             {job.status === 'Complete' && (
-                              <span className="status-label complete">Done</span>
+                              <span className="status-label complete">{t.download.statusComplete}</span>
                             )}
                             {job.status === 'Error' && (
-                              <span className="status-label error" title={job.error}>Failed</span>
+                              <span className="status-label error" title={job.error}>{t.download.statusError}</span>
                             )}
                           </div>
                         </div>
@@ -558,7 +563,7 @@ function App() {
                           <button
                             className="btn-remove"
                             onClick={() => handleRemoveJob(job.id)}
-                            title="Remove from queue"
+                            title={t.download.removeFromQueue}
                           >
                             ×
                           </button>
@@ -573,27 +578,27 @@ function App() {
             {/* Progress Log (collapsible) */}
             {downloadProgress && (
               <details className="progress-box">
-                <summary>Progress Log</summary>
+                <summary>{t.download.progressLog}</summary>
                 <pre className="progress-output">{downloadProgress}</pre>
               </details>
             )}
 
             <div className="info-box">
-              <h3>Features</h3>
+              <h3>{t.download.featuresTitle}</h3>
               <ul>
-                <li><strong>Queue System:</strong> Add multiple URLs, they download one by one</li>
-                <li><strong>Quick Drop Zone:</strong> Drag URLs from browser directly to floating button</li>
-                <li><strong>Auto-Organization:</strong> Files saved as Artist/Album/Song.mp3</li>
-                <li><strong>High Quality:</strong> Downloads best available audio quality</li>
+                <li><strong>{t.download.featureQueue}</strong> {t.download.featureQueueDesc}</li>
+                <li><strong>{t.download.featureDropZone}</strong> {t.download.featureDropZoneDesc}</li>
+                <li><strong>{t.download.featureOrganize}</strong> {t.download.featureOrganizeDesc}</li>
+                <li><strong>{t.download.featureQuality}</strong> {t.download.featureQualityDesc}</li>
               </ul>
-              <p className="note">Files saved to: ~/Downloads/Hasod Downloads/</p>
+              <p className="note">{t.download.saveLocation}</p>
             </div>
           </div>
         )}
       </main>
 
       <footer className="app-footer">
-        <p>Hasod Downloads v0.2.0 | Multi-Service Queue</p>
+        <p>{t.footer.version}</p>
       </footer>
     </div>
   );
