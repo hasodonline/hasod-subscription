@@ -24,6 +24,10 @@ use tiny_http::{Response, Server};
 use url::Url;
 use uuid::Uuid;
 
+// Import API types (manually maintained to match OpenAPI spec)
+mod api_types;
+use api_types::{HasodApiClient, SpotifyTrackMetadata};
+
 
 // ============================================================================
 // Data Structures
@@ -995,79 +999,20 @@ fn extract_spotify_track_id(url: &str) -> Option<String> {
     None
 }
 
-/// Get Spotify track metadata by scraping the embed page (no authentication required)
-/// Extracts data from the Next.js JSON embedded in the page
-async fn get_spotify_metadata_oembed(url: &str) -> Result<(String, String), String> {
-    use serde_json::Value;
+/// Get Spotify track metadata from our backend API
+/// Uses Groover API (primary) + ISRC Finder (fallback) for complete metadata
+async fn get_spotify_metadata_from_api(url: &str) -> Result<SpotifyTrackMetadata, String> {
+    println!("[Spotify API] Fetching metadata from backend...");
 
-    println!("[Spotify Embed] Fetching metadata for: {}", url);
+    // Use the centralized API client
+    let api_client = HasodApiClient::production();
 
-    // Extract track ID from URL
-    let track_id = extract_spotify_track_id(url)
-        .ok_or("Could not extract track ID from URL")?;
+    let metadata = api_client.get_spotify_metadata(url).await?;
 
-    let client = reqwest::Client::builder()
-        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
-        .build()
-        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+    println!("[Spotify API] ✅ Got: '{}' by '{}' from album '{}'", metadata.name, metadata.artist, metadata.album);
+    println!("[Spotify API] ISRC: {}, Duration: {}ms", metadata.isrc, metadata.duration_ms);
 
-    // Fetch the embed page which contains Next.js data
-    let embed_url = format!("https://open.spotify.com/embed/track/{}", track_id);
-    println!("[Spotify Embed] Fetching: {}", embed_url);
-
-    let response = client
-        .get(&embed_url)
-        .send()
-        .await
-        .map_err(|e| format!("Embed page request failed: {}", e))?;
-
-    if !response.status().is_success() {
-        return Err(format!("Embed page returned status: {}", response.status()));
-    }
-
-    let html = response
-        .text()
-        .await
-        .map_err(|e| format!("Failed to read embed page: {}", e))?;
-
-    // Extract JSON from <script id="__NEXT_DATA__" type="application/json">...</script>
-    let json_data = html
-        .split(r#"<script id="__NEXT_DATA__" type="application/json">"#)
-        .nth(1)
-        .and_then(|s| s.split("</script>").next())
-        .ok_or("Could not find __NEXT_DATA__ in embed page")?;
-
-    // Parse the Next.js data
-    let data: Value = serde_json::from_str(json_data)
-        .map_err(|e| format!("Failed to parse Next.js data: {}", e))?;
-
-    // Extract artist and title from: props.pageProps.state.data.entity
-    let entity = data
-        .get("props")
-        .and_then(|v| v.get("pageProps"))
-        .and_then(|v| v.get("state"))
-        .and_then(|v| v.get("data"))
-        .and_then(|v| v.get("entity"))
-        .ok_or("Could not find entity data")?;
-
-    let title = entity
-        .get("name")
-        .and_then(|v| v.as_str())
-        .ok_or("No track name in entity data")?
-        .to_string();
-
-    let artist = entity
-        .get("artists")
-        .and_then(|v| v.as_array())
-        .and_then(|arr| arr.first())
-        .and_then(|v| v.get("name"))
-        .and_then(|v| v.as_str())
-        .ok_or("No artist name in entity data")?
-        .to_string();
-
-    println!("[Spotify Embed] Found: '{}' by '{}'", title, artist);
-
-    Ok((artist, title))
+    Ok(metadata)
 }
 
 /// Get full track metadata from Spotify Web API
@@ -1918,16 +1863,16 @@ async fn process_download_job(app: &AppHandle, job_id: String, base_output_dir: 
     let mut apple_music_metadata: Option<AppleMusicTrackInfo> = None;
 
     let download_url = if service == MusicService::Spotify {
-        // SPOTIFY: Scrape embed page (no auth) + YouTube search
-        println!("[Spotify] Using embed page scraping (no authentication required)");
+        // SPOTIFY: Use backend API for complete metadata (ISRC, album, duration)
+        println!("[Spotify] Using backend API for metadata extraction");
 
-        // Step 1: Get metadata from oEmbed API
+        // Step 1: Get complete metadata from backend API
         update_job_status(&job_id, DownloadStatus::Downloading, 5.0, "Getting track info...");
         #[cfg(target_os = "macos")]
         update_floating_panel_status("fetching", 5.0, "Fetching metadata...", get_queued_count());
 
-        let (artist, title) = match get_spotify_metadata_oembed(&url).await {
-            Ok(result) => result,
+        let spotify_metadata = match get_spotify_metadata_from_api(&url).await {
+            Ok(metadata) => metadata,
             Err(e) => {
                 let error_msg = format!("Failed to get Spotify metadata: {}", e);
                 println!("[Spotify] {}", error_msg);
@@ -1944,25 +1889,31 @@ async fn process_download_job(app: &AppHandle, job_id: String, base_output_dir: 
             }
         };
 
-        // Update metadata in queue
+        // Update metadata in queue with complete info
         {
             let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
             if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
-                job.metadata.title = title.clone();
-                job.metadata.artist = artist.clone();
+                job.metadata.title = spotify_metadata.name.clone();
+                job.metadata.artist = spotify_metadata.artist.clone();
+                job.metadata.album = spotify_metadata.album.clone();
             }
         }
 
-        println!("[Spotify] Searching YouTube for: {} - {}", artist, title);
+        println!("[Spotify] Searching YouTube for: {} - {} (Album: {})",
+                 spotify_metadata.artist, spotify_metadata.name, spotify_metadata.album);
 
-        // Step 2: Search YouTube for best match
-        update_job_status(&job_id, DownloadStatus::Downloading, 15.0, &format!("Searching: {}", title));
+        // Step 2: Search YouTube with artist + title + album for accurate matching
+        update_job_status(&job_id, DownloadStatus::Downloading, 15.0, &format!("Searching: {}", spotify_metadata.name));
         #[cfg(target_os = "macos")]
-        update_floating_panel_status("searching", 15.0, &format!("{} - {}", artist, title), get_queued_count());
+        update_floating_panel_status("searching", 15.0,
+            &format!("{} - {}", spotify_metadata.artist, spotify_metadata.name), get_queued_count());
 
-        match find_best_youtube_source(app, &artist, &title, &job_id).await {
+        // Try to find best YouTube source using artist + title
+        // TODO: Enhance search to include album name for even better matching
+        match find_best_youtube_source(app, &spotify_metadata.artist, &spotify_metadata.name, &job_id).await {
             Ok(youtube_url) => {
                 println!("[Spotify] Found YouTube match: {}", youtube_url);
+                println!("[Spotify] Will verify duration: expected {}ms", spotify_metadata.duration_ms);
                 youtube_url
             }
             Err(e) => {

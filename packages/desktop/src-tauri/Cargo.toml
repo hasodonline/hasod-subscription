@@ -12,6 +12,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+# Note: Rust API types are manually maintained in src/api_types.rs
+# Based on OpenAPI spec: packages/api-spec/openapi.yaml
+# When adding new endpoints, update api_types.rs to match the spec
+
 [dependencies]
 tauri = { version = "2", features = ["devtools", "tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-opener = "2"
