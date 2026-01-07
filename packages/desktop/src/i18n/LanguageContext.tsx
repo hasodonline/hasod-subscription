@@ -1,10 +1,13 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { Language, translations, TranslationStrings } from './translations';
+import { Language, translations } from './translations';
+
+// Use a generic type for translations that works with both languages
+type TranslationObject = typeof translations['en'];
 
 interface LanguageContextType {
   language: Language;
   setLanguage: (lang: Language) => void;
-  t: TranslationStrings;
+  t: TranslationObject;
   isRTL: boolean;
 }
 
@@ -45,7 +48,7 @@ export function LanguageProvider({ children }: { children: ReactNode }) {
   const value: LanguageContextType = {
     language,
     setLanguage,
-    t: translations[language],
+    t: translations[language] as TranslationObject,
     isRTL: language === 'he',
   };
 

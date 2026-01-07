@@ -668,3 +668,27 @@ html, body, #root {
 .drop-hint {
   display: none;
 }
+
+/* ============================================================================
+   RTL Support
+   ============================================================================ */
+
+html[dir="rtl"] .queue-item {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .item-info {
+  text-align: right;
+}
+
+html[dir="rtl"] .panel-header {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .tooltip-content {
+  flex-direction: row-reverse;
+}
+
+html[dir="rtl"] .empty-queue {
+  direction: rtl;
+}

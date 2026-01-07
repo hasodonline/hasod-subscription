@@ -295,14 +295,14 @@ function FloatingButton() {
       {(isDragOver || currentJob || queuedCount > 0) && (
         <div className="tooltip">
           {isDragOver ? (
-            'Drop URL here!'
+            t.floating.dropUrlHere
           ) : currentJob ? (
             <span className="tooltip-content">
               <span className="tooltip-icon">{serviceStyle.icon}</span>
-              <span className="tooltip-text">{currentJob.metadata?.title || 'Downloading...'}</span>
+              <span className="tooltip-text">{currentJob.metadata?.title || t.download.statusDownloading}</span>
             </span>
           ) : queuedCount > 0 ? (
-            `${queuedCount} waiting`
+            `${queuedCount} ${t.floating.waiting}`
           ) : null}
         </div>
       )}
@@ -311,14 +311,14 @@ function FloatingButton() {
       {showPanel && queueStatus && (
         <div className="queue-panel">
           <div className="panel-header">
-            <span>Download Queue</span>
+            <span>{t.floating.downloadQueue}</span>
             <button className="panel-close" onClick={() => setShowPanel(false)}>×</button>
           </div>
           <div className="panel-content">
             {queueStatus.jobs.length === 0 ? (
               <div className="empty-queue">
                 <div className="empty-icon">📥</div>
-                <div className="empty-text">Drop URLs or click to add from clipboard</div>
+                <div className="empty-text">{t.floating.dropOrClick}</div>
               </div>
             ) : (
               <div className="queue-list">
@@ -326,23 +326,23 @@ function FloatingButton() {
                   <div key={job.id} className={`queue-item ${job.status.toLowerCase()}`}>
                     <span className="item-icon">{serviceStyles[job.service]?.icon || '❓'}</span>
                     <div className="item-info">
-                      <div className="item-title">{job.metadata?.title || 'Loading...'}</div>
+                      <div className="item-title">{job.metadata?.title || t.common.loading}</div>
                       <div className="item-status">
                         {job.status === 'Downloading' && (
                           <div className="mini-progress">
                             <div className="mini-progress-fill" style={{ width: `${job.progress}%` }} />
                           </div>
                         )}
-                        {job.status === 'Converting' && <span className="status-converting">Converting...</span>}
-                        {job.status === 'Complete' && <span className="status-complete">✓ Done</span>}
-                        {job.status === 'Queued' && <span className="status-queued">Waiting...</span>}
-                        {job.status === 'Error' && <span className="status-error">✗ Error</span>}
+                        {job.status === 'Converting' && <span className="status-converting">{t.floating.converting}</span>}
+                        {job.status === 'Complete' && <span className="status-complete">✓ {t.floating.done}</span>}
+                        {job.status === 'Queued' && <span className="status-queued">{t.floating.waiting}</span>}
+                        {job.status === 'Error' && <span className="status-error">✗ {t.floating.error}</span>}
                       </div>
                     </div>
                   </div>
                 ))}
                 {queueStatus.jobs.length > 5 && (
-                  <div className="queue-more">+{queueStatus.jobs.length - 5} more</div>
+                  <div className="queue-more">+{queueStatus.jobs.length - 5} {t.floating.more}</div>
                 )}
               </div>
             )}
@@ -352,7 +352,7 @@ function FloatingButton() {
               className="clear-btn"
               onClick={() => invoke('clear_completed_jobs').then(() => invoke<QueueStatus>('get_queue_status').then(setQueueStatus))}
             >
-              Clear completed ({queueStatus.completed_count})
+              {t.floating.clearCompleted} ({queueStatus.completed_count})
             </button>
           )}
         </div>
