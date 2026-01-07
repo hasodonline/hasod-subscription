@@ -317,6 +317,36 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metadata/spotify": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract Spotify track metadata
+         * @description Extracts complete track metadata from a Spotify URL including:
+         *     - Artist name
+         *     - Track title
+         *     - Album name
+         *     - ISRC (International Standard Recording Code)
+         *     - Duration (milliseconds)
+         *     - Release date
+         *     - Cover art URL
+         *
+         *     Uses Spotify's public embed page to obtain an anonymous access token,
+         *     then calls the Spotify API for complete metadata. No authentication required.
+         */
+        post: operations["getSpotifyMetadata"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -554,6 +584,59 @@ export interface components {
             items: components["schemas"]["TransliteratedItem"][];
             /** @description Number of OpenAI tokens used */
             tokensUsed?: number;
+        };
+        SpotifyMetadataRequest: {
+            /**
+             * @description Spotify track URL (e.g., https://open.spotify.com/track/xxx or spotify:track:xxx)
+             * @example https://open.spotify.com/track/5omHkj4qY0A8f6mE4T3fAH
+             */
+            spotifyUrl: string;
+        };
+        SpotifyMetadataResponse: {
+            success: boolean;
+            metadata: components["schemas"]["SpotifyTrackMetadata"];
+        };
+        SpotifyTrackMetadata: {
+            /**
+             * @description Spotify track ID
+             * @example 5omHkj4qY0A8f6mE4T3fAH
+             */
+            trackId: string;
+            /**
+             * @description Track title
+             * @example היה טוב
+             */
+            name: string;
+            /**
+             * @description Primary artist name
+             * @example Omer Adam
+             */
+            artist: string;
+            /**
+             * @description Album name
+             * @example תסמינים של פרידה
+             */
+            album: string;
+            /**
+             * @description International Standard Recording Code
+             * @example IL1012501110
+             */
+            isrc: string;
+            /**
+             * @description Track duration in milliseconds
+             * @example 213879
+             */
+            duration_ms: number;
+            /**
+             * @description Album release date (ISO format)
+             * @example 2025-06-10
+             */
+            releaseDate?: string;
+            /**
+             * @description Album cover art URL
+             * @example https://i.scdn.co/image/ab67616d0000b27312d961970aa13291d9720f8b
+             */
+            imageUrl?: string;
         };
     };
     responses: {
@@ -995,6 +1078,40 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             /** @description Subscription required */
             403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSpotifyMetadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpotifyMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description Metadata extracted successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotifyMetadataResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Failed to extract metadata */
+            500: {
                 headers: {
                     [name: string]: unknown;
                 };

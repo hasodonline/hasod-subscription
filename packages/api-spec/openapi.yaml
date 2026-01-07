@@ -28,6 +28,8 @@ tags:
     description: Administrative operations (requires admin email)
   - name: Transliteration
     description: Hebrew to English transliteration service
+  - name: Metadata
+    description: Music metadata extraction services
 
 # Default: no security (public endpoints explicitly set security: [])
 security: []
@@ -403,6 +405,49 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '403':
           description: Subscription required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Metadata
+  # ===========================================================================
+  /metadata/spotify:
+    post:
+      operationId: getSpotifyMetadata
+      summary: Extract Spotify track metadata
+      description: |
+        Extracts complete track metadata from a Spotify URL including:
+        - Artist name
+        - Track title
+        - Album name
+        - ISRC (International Standard Recording Code)
+        - Duration (milliseconds)
+        - Release date
+        - Cover art URL
+
+        Uses Spotify's public embed page to obtain an anonymous access token,
+        then calls the Spotify API for complete metadata. No authentication required.
+      tags: [Metadata]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpotifyMetadataRequest'
+      responses:
+        '200':
+          description: Metadata extracted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpotifyMetadataResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          description: Failed to extract metadata
           content:
             application/json:
               schema:
@@ -972,3 +1017,62 @@ components:
         tokensUsed:
           type: integer
           description: Number of OpenAI tokens used
+
+    # -------------------------------------------------------------------------
+    # Metadata Schemas
+    # -------------------------------------------------------------------------
+    SpotifyMetadataRequest:
+      type: object
+      required: [spotifyUrl]
+      properties:
+        spotifyUrl:
+          type: string
+          description: |
+            Spotify track URL (e.g., https://open.spotify.com/track/xxx or spotify:track:xxx)
+          example: "https://open.spotify.com/track/5omHkj4qY0A8f6mE4T3fAH"
+
+    SpotifyMetadataResponse:
+      type: object
+      required: [success, metadata]
+      properties:
+        success:
+          type: boolean
+        metadata:
+          $ref: '#/components/schemas/SpotifyTrackMetadata'
+
+    SpotifyTrackMetadata:
+      type: object
+      required: [trackId, name, artist, album, isrc, duration_ms]
+      properties:
+        trackId:
+          type: string
+          description: Spotify track ID
+          example: "5omHkj4qY0A8f6mE4T3fAH"
+        name:
+          type: string
+          description: Track title
+          example: "היה טוב"
+        artist:
+          type: string
+          description: Primary artist name
+          example: "Omer Adam"
+        album:
+          type: string
+          description: Album name
+          example: "תסמינים של פרידה"
+        isrc:
+          type: string
+          description: International Standard Recording Code
+          example: "IL1012501110"
+        duration_ms:
+          type: integer
+          description: Track duration in milliseconds
+          example: 213879
+        releaseDate:
+          type: string
+          description: Album release date (ISO format)
+          example: "2025-06-10"
+        imageUrl:
+          type: string
+          description: Album cover art URL
+          example: "https://i.scdn.co/image/ab67616d0000b27312d961970aa13291d9720f8b"

@@ -51,6 +51,7 @@ const express_1 = __importDefault(require("express"));
 const SubscriptionService = __importStar(require("./services/subscription.service"));
 const TransactionService = __importStar(require("./services/transaction.service"));
 const FirestoreService = __importStar(require("./services/firestore.service"));
+const spotify_metadata_service_1 = require("./services/spotify-metadata.service");
 // Utilities
 const config_1 = require("./utils/config");
 const errors_1 = require("./utils/errors");
@@ -613,6 +614,36 @@ app.post('/transliterate', async (req, res, next) => {
     catch (error) {
         console.error('❌ Transliteration error:', error);
         next(error);
+    }
+});
+// ============================================================================
+// Metadata Endpoints
+// ============================================================================
+/**
+ * POST /metadata/spotify
+ * Extract complete Spotify track metadata (no auth required)
+ */
+app.post('/metadata/spotify', async (req, res, next) => {
+    try {
+        const { spotifyUrl } = req.body;
+        if (!spotifyUrl || typeof spotifyUrl !== 'string') {
+            return res.status(400).json({
+                success: false,
+                error: 'Missing required field: spotifyUrl'
+            });
+        }
+        const metadata = await spotify_metadata_service_1.spotifyMetadataService.getTrackMetadata(spotifyUrl);
+        res.json({
+            success: true,
+            metadata
+        });
+    }
+    catch (error) {
+        console.error('❌ Spotify metadata error:', error);
+        res.status(500).json({
+            success: false,
+            error: error.message || 'Failed to extract metadata'
+        });
     }
 });
 // ============================================================================

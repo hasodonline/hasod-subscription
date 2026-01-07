@@ -364,8 +364,10 @@ const GOOGLE_OAUTH_CLIENT_SECRET: &str = env!("HASOD_GOOGLE_OAUTH_CLIENT_SECRET"
 const OAUTH_CALLBACK_PORT: u16 = 8420;
 const KEYCHAIN_SERVICE: &str = "hasod-downloads";
 
-// Spotify API credentials (optional - falls back to oEmbed if not set)
-// Get these from https://developer.spotify.com/dashboard
+// Spotify API credentials
+// Public credentials for spotDL
+const SPOTIFY_CLIENT_ID_DEFAULT: &str = "c6b23f1e91f84b6a9361de16aba0ae17";
+const SPOTIFY_CLIENT_SECRET_DEFAULT: &str = "237e355acaa24636abc79f1a089e6204";
 const SPOTIFY_CLIENT_ID: Option<&str> = option_env!("HASOD_SPOTIFY_CLIENT_ID");
 const SPOTIFY_CLIENT_SECRET: Option<&str> = option_env!("HASOD_SPOTIFY_CLIENT_SECRET");
 
@@ -993,6 +995,81 @@ fn extract_spotify_track_id(url: &str) -> Option<String> {
     None
 }
 
+/// Get Spotify track metadata by scraping the embed page (no authentication required)
+/// Extracts data from the Next.js JSON embedded in the page
+async fn get_spotify_metadata_oembed(url: &str) -> Result<(String, String), String> {
+    use serde_json::Value;
+
+    println!("[Spotify Embed] Fetching metadata for: {}", url);
+
+    // Extract track ID from URL
+    let track_id = extract_spotify_track_id(url)
+        .ok_or("Could not extract track ID from URL")?;
+
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36")
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    // Fetch the embed page which contains Next.js data
+    let embed_url = format!("https://open.spotify.com/embed/track/{}", track_id);
+    println!("[Spotify Embed] Fetching: {}", embed_url);
+
+    let response = client
+        .get(&embed_url)
+        .send()
+        .await
+        .map_err(|e| format!("Embed page request failed: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Embed page returned status: {}", response.status()));
+    }
+
+    let html = response
+        .text()
+        .await
+        .map_err(|e| format!("Failed to read embed page: {}", e))?;
+
+    // Extract JSON from <script id="__NEXT_DATA__" type="application/json">...</script>
+    let json_data = html
+        .split(r#"<script id="__NEXT_DATA__" type="application/json">"#)
+        .nth(1)
+        .and_then(|s| s.split("</script>").next())
+        .ok_or("Could not find __NEXT_DATA__ in embed page")?;
+
+    // Parse the Next.js data
+    let data: Value = serde_json::from_str(json_data)
+        .map_err(|e| format!("Failed to parse Next.js data: {}", e))?;
+
+    // Extract artist and title from: props.pageProps.state.data.entity
+    let entity = data
+        .get("props")
+        .and_then(|v| v.get("pageProps"))
+        .and_then(|v| v.get("state"))
+        .and_then(|v| v.get("data"))
+        .and_then(|v| v.get("entity"))
+        .ok_or("Could not find entity data")?;
+
+    let title = entity
+        .get("name")
+        .and_then(|v| v.as_str())
+        .ok_or("No track name in entity data")?
+        .to_string();
+
+    let artist = entity
+        .get("artists")
+        .and_then(|v| v.as_array())
+        .and_then(|arr| arr.first())
+        .and_then(|v| v.get("name"))
+        .and_then(|v| v.as_str())
+        .ok_or("No artist name in entity data")?
+        .to_string();
+
+    println!("[Spotify Embed] Found: '{}' by '{}'", title, artist);
+
+    Ok((artist, title))
+}
+
 /// Get full track metadata from Spotify Web API
 async fn get_spotify_track_from_api(track_id: &str) -> Result<SpotifyTrackInfo, String> {
     let token = get_spotify_access_token().await?;
@@ -1571,9 +1648,24 @@ async fn download_with_spotdl(
     let spotdl_sidecar = app.shell().sidecar("spotdl")
         .map_err(|e| format!("Failed to get spotdl sidecar: {}", e))?;
 
+    // Build args with Spotify credentials
+    let mut args = vec!["save".to_string(), url.to_string(), "--save-file".to_string(), "-".to_string(), "--preload".to_string()];
+
+    // Always use public Spotify credentials to avoid rate limiting
+    // These are public spotDL credentials - safe to hardcode
+    let client_id = SPOTIFY_CLIENT_ID_DEFAULT;
+    let client_secret = SPOTIFY_CLIENT_SECRET_DEFAULT;
+
+    println!("[spotdl] Using public Spotify credentials (client_id: {}...)", &client_id[..16]);
+
+    args.push("--client-id".to_string());
+    args.push(client_id.to_string());
+    args.push("--client-secret".to_string());
+    args.push(client_secret.to_string());
+
     // Use --save-file - to output to stdout, --preload to find YouTube URL
     let (mut rx, _child) = spotdl_sidecar
-        .args(["save", url, "--save-file", "-", "--preload"])
+        .args(args.iter().map(|s| s.as_str()).collect::<Vec<_>>())
         .spawn()
         .map_err(|e| format!("Failed to spawn spotdl: {}", e))?;
 
@@ -1619,6 +1711,11 @@ async fn download_with_spotdl(
             tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
                 let line_str = String::from_utf8_lossy(&line).to_string();
                 eprintln!("[spotdl stderr] {}", line_str);
+
+                // Check for rate limit errors
+                if line_str.contains("rate/request limit") || line_str.contains("Retry will occur after") {
+                    return Err("Spotify API rate limited. Please try again later.".to_string());
+                }
 
                 #[cfg(target_os = "macos")]
                 {
@@ -1814,59 +1911,76 @@ async fn process_download_job(app: &AppHandle, job_id: String, base_output_dir: 
     println!("[Download] Starting {} download for job {}", service.display_name(), job_id);
 
     // ========================================================================
-    // SPOTIFY: Use spotDL for accurate song matching (ISRC + duration + artist)
-    // ========================================================================
-    if service == MusicService::Spotify {
-        println!("[Spotify] Using spotDL for accurate matching");
-
-        match download_with_spotdl(app, &url, &base_output_dir, &job_id, get_queued_count).await {
-            Ok((_file_path, metadata)) => {
-                // Update job with metadata from spotDL
-                {
-                    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
-                    if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
-                        job.metadata = metadata.clone();
-                        job.completed_at = Some(chrono::Utc::now().timestamp());
-                    }
-                }
-
-                // Mark as complete
-                update_job_status(&job_id, DownloadStatus::Complete, 100.0, "Download complete!");
-                app.emit("queue-update", get_queue_status().ok()).ok();
-
-                // Update floating panel
-                #[cfg(target_os = "macos")]
-                update_floating_panel_status("complete", 100.0, "Done!", get_queued_count());
-
-                return Ok("Download complete".to_string());
-            }
-            Err(e) => {
-                println!("[Spotify] spotDL failed: {}", e);
-                update_job_status(&job_id, DownloadStatus::Error, 0.0, &e);
-                if let Ok(mut queue) = DOWNLOAD_QUEUE.lock() {
-                    if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
-                        job.error = Some(e.clone());
-                    }
-                }
-                app.emit("queue-update", get_queue_status().ok()).ok();
-
-                #[cfg(target_os = "macos")]
-                update_floating_panel_status("error", 0.0, "Error", get_queued_count());
-
-                return Err(e);
-            }
-        }
-    }
-
-    // ========================================================================
-    // OTHER SERVICES: Use yt-dlp with YouTube search
+    // SERVICE-SPECIFIC URL RESOLUTION
     // ========================================================================
 
-    // For Apple Music: Get track info and search YouTube for best quality source
     // Store metadata if available for folder structure
     let mut apple_music_metadata: Option<AppleMusicTrackInfo> = None;
 
-    let download_url = if service == MusicService::AppleMusic {
+    let download_url = if service == MusicService::Spotify {
+        // SPOTIFY: Scrape embed page (no auth) + YouTube search
+        println!("[Spotify] Using embed page scraping (no authentication required)");
+
+        // Step 1: Get metadata from oEmbed API
+        update_job_status(&job_id, DownloadStatus::Downloading, 5.0, "Getting track info...");
+        #[cfg(target_os = "macos")]
+        update_floating_panel_status("fetching", 5.0, "Fetching metadata...", get_queued_count());
+
+        let (artist, title) = match get_spotify_metadata_oembed(&url).await {
+            Ok(result) => result,
+            Err(e) => {
+                let error_msg = format!("Failed to get Spotify metadata: {}", e);
+                println!("[Spotify] {}", error_msg);
+                update_job_status(&job_id, DownloadStatus::Error, 0.0, &error_msg);
+                if let Ok(mut queue) = DOWNLOAD_QUEUE.lock() {
+                    if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+                        job.error = Some(error_msg.clone());
+                    }
+                }
+                app.emit("queue-update", get_queue_status().ok()).ok();
+                #[cfg(target_os = "macos")]
+                update_floating_panel_status("error", 0.0, "Error", get_queued_count());
+                return Err(error_msg);
+            }
+        };
+
+        // Update metadata in queue
+        {
+            let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+            if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+                job.metadata.title = title.clone();
+                job.metadata.artist = artist.clone();
+            }
+        }
+
+        println!("[Spotify] Searching YouTube for: {} - {}", artist, title);
+
+        // Step 2: Search YouTube for best match
+        update_job_status(&job_id, DownloadStatus::Downloading, 15.0, &format!("Searching: {}", title));
+        #[cfg(target_os = "macos")]
+        update_floating_panel_status("searching", 15.0, &format!("{} - {}", artist, title), get_queued_count());
+
+        match find_best_youtube_source(app, &artist, &title, &job_id).await {
+            Ok(youtube_url) => {
+                println!("[Spotify] Found YouTube match: {}", youtube_url);
+                youtube_url
+            }
+            Err(e) => {
+                let error_msg = format!("YouTube search failed: {}", e);
+                println!("[Spotify] {}", error_msg);
+                update_job_status(&job_id, DownloadStatus::Error, 0.0, &error_msg);
+                if let Ok(mut queue) = DOWNLOAD_QUEUE.lock() {
+                    if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+                        job.error = Some(error_msg.clone());
+                    }
+                }
+                app.emit("queue-update", get_queue_status().ok()).ok();
+                #[cfg(target_os = "macos")]
+                update_floating_panel_status("error", 0.0, "Error", get_queued_count());
+                return Err(error_msg);
+            }
+        }
+    } else if service == MusicService::AppleMusic {
         // Apple Music: Use iTunes Lookup API to get metadata, then search YouTube
         update_job_status(&job_id, DownloadStatus::Downloading, 2.0, "Fetching Apple Music track info...");
         app.emit("queue-update", get_queue_status().ok()).ok();
