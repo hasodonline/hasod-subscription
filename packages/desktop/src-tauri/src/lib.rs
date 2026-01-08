@@ -842,6 +842,80 @@ async fn add_spotify_album_to_queue(album_url: String) -> Result<Vec<DownloadJob
     Ok(jobs)
 }
 
+/// Add YouTube playlist to queue (extracts all videos and queues them individually)
+#[tauri::command]
+async fn add_youtube_playlist_to_queue(app: AppHandle, playlist_url: String) -> Result<Vec<DownloadJob>, String> {
+    use tauri_plugin_shell::ShellExt;
+
+    println!("[YouTube Playlist] Processing: {}", playlist_url);
+
+    // Use yt-dlp to extract playlist info
+    let sidecar = app.shell().sidecar("yt-dlp")
+        .map_err(|e| format!("Failed to get yt-dlp: {}", e))?;
+
+    let (mut rx, _child) = sidecar
+        .args(&[
+            "--flat-playlist",
+            "--dump-json",
+            &playlist_url,
+        ])
+        .spawn()
+        .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+    let mut playlist_name = String::from("Unknown Playlist");
+    let mut video_urls = Vec::new();
+
+    // Collect JSON output
+    let mut json_lines = Vec::new();
+    while let Some(event) = rx.recv().await {
+        if let tauri_plugin_shell::process::CommandEvent::Stdout(line) = event {
+            json_lines.push(line);
+        }
+    }
+
+    // Parse JSON lines to extract video URLs and playlist name
+    for line in json_lines {
+        let line_str = String::from_utf8_lossy(&line);
+        if let Ok(json) = serde_json::from_str::<serde_json::Value>(&line_str) {
+            // First entry should have playlist title
+            if playlist_name == "Unknown Playlist" {
+                if let Some(playlist_title) = json.get("playlist_title").and_then(|v| v.as_str()) {
+                    playlist_name = playlist_title.to_string();
+                }
+            }
+
+            // Extract video URL
+            if let Some(video_id) = json.get("id").and_then(|v| v.as_str()) {
+                video_urls.push(format!("https://www.youtube.com/watch?v={}", video_id));
+            }
+        }
+    }
+
+    println!("[YouTube Playlist] Playlist: '{}' ({} videos)", playlist_name, video_urls.len());
+
+    if video_urls.is_empty() {
+        return Err("No videos found in playlist".to_string());
+    }
+
+    // Create jobs for each video
+    let mut jobs = Vec::new();
+    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+
+    let playlist_context = DownloadContext::Playlist(playlist_name.clone());
+
+    for video_url in video_urls {
+        let mut job = DownloadJob::new(video_url);
+        job.download_context = Some(playlist_context.clone());
+
+        jobs.push(job.clone());
+        queue.push(job);
+    }
+
+    println!("[YouTube Playlist] ✅ Queued {} videos from playlist", jobs.len());
+
+    Ok(jobs)
+}
+
 /// Add Spotify playlist to queue (fetches all tracks and queues them individually)
 #[tauri::command]
 async fn add_spotify_playlist_to_queue(playlist_url: String) -> Result<Vec<DownloadJob>, String> {
@@ -4035,6 +4109,7 @@ pub fn run() {
             add_multiple_to_queue,
             add_spotify_album_to_queue,
             add_spotify_playlist_to_queue,
+            add_youtube_playlist_to_queue,
             get_queue_status,
             clear_completed_jobs,
             remove_from_queue,

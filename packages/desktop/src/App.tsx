@@ -129,6 +129,11 @@ function App() {
         console.log('[App] Detected Spotify playlist, fetching tracks...');
         await invoke('add_spotify_playlist_to_queue', { playlistUrl: url });
       }
+      // Detect if URL is a YouTube playlist
+      else if (url.includes('youtube.com') && url.includes('list=')) {
+        console.log('[App] Detected YouTube playlist, extracting videos...');
+        await invoke('add_youtube_playlist_to_queue', { playlistUrl: url });
+      }
       else {
         await invoke('add_to_queue', { url });
       }
@@ -296,6 +301,11 @@ function App() {
       else if (downloadUrl.includes('spotify.com/playlist') || downloadUrl.startsWith('spotify:playlist:')) {
         console.log('[App] Detected Spotify playlist, fetching all tracks...');
         await invoke('add_spotify_playlist_to_queue', { playlistUrl: downloadUrl });
+      }
+      // Detect if URL is a YouTube playlist
+      else if (downloadUrl.includes('youtube.com') && downloadUrl.includes('list=')) {
+        console.log('[App] Detected YouTube playlist, extracting all videos...');
+        await invoke('add_youtube_playlist_to_queue', { playlistUrl: downloadUrl });
       }
       else {
         await invoke<DownloadJob>('add_to_queue', { url: downloadUrl });
