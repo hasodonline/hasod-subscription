@@ -706,6 +706,37 @@ app.post('/metadata/spotify', async (req: Request, res: Response, next: NextFunc
   }
 });
 
+/**
+ * POST /metadata/spotify/album
+ * Extract complete Spotify album metadata with all tracks and ISRCs (no auth required)
+ */
+app.post('/metadata/spotify/album', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { spotifyUrl } = req.body;
+
+    if (!spotifyUrl || typeof spotifyUrl !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field: spotifyUrl'
+      });
+    }
+
+    const albumMetadata = await spotifyMetadataService.getAlbumMetadata(spotifyUrl);
+
+    res.json({
+      success: true,
+      album: albumMetadata.album,
+      tracks: albumMetadata.tracks
+    });
+  } catch (error: any) {
+    console.error('❌ Spotify album metadata error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message || 'Failed to extract album metadata'
+    });
+  }
+});
+
 // ============================================================================
 // Download Link Retrieval Endpoints
 // ============================================================================

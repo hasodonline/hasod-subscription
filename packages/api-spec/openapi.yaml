@@ -455,6 +455,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /metadata/spotify/album:
+    post:
+      operationId: getSpotifyAlbumMetadata
+      summary: Extract Spotify album metadata with all tracks
+      description: |
+        Extracts complete album metadata including all tracks with ISRCs.
+        Returns album information and a list of all tracks with their metadata.
+
+        **Batch Processing:**
+        - Fetches up to 50 tracks in a single API call
+        - Each track includes ISRC for Deezer matching
+        - Ideal for album/playlist downloads
+
+        Uses Spotify's public embed page to obtain an anonymous access token,
+        then calls the Spotify API. No authentication required.
+      tags: [Metadata]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpotifyAlbumMetadataRequest'
+      responses:
+        '200':
+          description: Album metadata extracted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpotifyAlbumMetadataResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          description: Failed to extract album metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # ===========================================================================
   # Download Link Retrieval
   # ===========================================================================
@@ -1134,6 +1173,99 @@ components:
           type: string
           description: Album cover art URL
           example: "https://i.scdn.co/image/ab67616d0000b27312d961970aa13291d9720f8b"
+
+    SpotifyAlbumMetadataRequest:
+      type: object
+      required: [spotifyUrl]
+      properties:
+        spotifyUrl:
+          type: string
+          description: |
+            Spotify album URL (e.g., https://open.spotify.com/album/xxx)
+          example: "https://open.spotify.com/album/4fnlNjkYSlc6nmkNo5v9nC"
+
+    SpotifyAlbumMetadataResponse:
+      type: object
+      required: [success, album, tracks]
+      properties:
+        success:
+          type: boolean
+        album:
+          $ref: '#/components/schemas/SpotifyAlbumInfo'
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpotifyAlbumTrack'
+
+    SpotifyAlbumInfo:
+      type: object
+      required: [albumId, name, artist, totalTracks]
+      properties:
+        albumId:
+          type: string
+          description: Spotify album ID
+          example: "4fnlNjkYSlc6nmkNo5v9nC"
+        name:
+          type: string
+          description: Album name
+          example: "זמן להתעורר"
+        artist:
+          type: string
+          description: Primary artist name
+          example: "Hadag Nahash"
+        releaseDate:
+          type: string
+          description: Album release date (ISO format)
+          example: "2013-03-20"
+        totalTracks:
+          type: integer
+          description: Total number of tracks in album
+          example: 13
+        imageUrl:
+          type: string
+          description: Album cover art URL
+          example: "https://i.scdn.co/image/ab67616d0000b273246dd456ad6730fb8a01c99a"
+
+    SpotifyAlbumTrack:
+      type: object
+      required: [trackId, position, name, artists, isrc, duration_ms]
+      properties:
+        trackId:
+          type: string
+          description: Spotify track ID
+          example: "7qhrpRjKIXTEIrzXOgQLbY"
+        position:
+          type: integer
+          description: Track position in album (1-based)
+          example: 1
+        name:
+          type: string
+          description: Track title
+          example: "מסתובב"
+        artists:
+          type: string
+          description: Artist names (comma-separated if multiple)
+          example: "Hadag Nahash"
+        album:
+          type: string
+          description: Album name
+          example: "זמן להתעורר"
+        isrc:
+          type: string
+          description: International Standard Recording Code
+          example: "IL4070900127"
+        duration_ms:
+          type: integer
+          description: Track duration in milliseconds
+          example: 56053
+        imageUrl:
+          type: string
+          description: Album cover art URL
+          example: "https://i.scdn.co/image/ab67616d0000b273246dd456ad6730fb8a01c99a"
+        releaseDate:
+          type: string
+          description: Album release date
+          example: "2013-03-20"
 
     # -------------------------------------------------------------------------
     # Download Link Retrieval Schemas

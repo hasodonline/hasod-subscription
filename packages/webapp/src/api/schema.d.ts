@@ -347,6 +347,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metadata/spotify/album": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract Spotify album metadata with all tracks
+         * @description Extracts complete album metadata including all tracks with ISRCs.
+         *     Returns album information and a list of all tracks with their metadata.
+         *
+         *     **Batch Processing:**
+         *     - Fetches up to 50 tracks in a single API call
+         *     - Each track includes ISRC for Deezer matching
+         *     - Ideal for album/playlist downloads
+         *
+         *     Uses Spotify's public embed page to obtain an anonymous access token,
+         *     then calls the Spotify API. No authentication required.
+         */
+        post: operations["getSpotifyAlbumMetadata"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/download/deezer/isrc": {
         parameters: {
             query?: never;
@@ -665,6 +694,97 @@ export interface components {
              * @example https://i.scdn.co/image/ab67616d0000b27312d961970aa13291d9720f8b
              */
             imageUrl?: string;
+        };
+        SpotifyAlbumMetadataRequest: {
+            /**
+             * @description Spotify album URL (e.g., https://open.spotify.com/album/xxx)
+             * @example https://open.spotify.com/album/4fnlNjkYSlc6nmkNo5v9nC
+             */
+            spotifyUrl: string;
+        };
+        SpotifyAlbumMetadataResponse: {
+            success: boolean;
+            album: components["schemas"]["SpotifyAlbumInfo"];
+            tracks: components["schemas"]["SpotifyAlbumTrack"][];
+        };
+        SpotifyAlbumInfo: {
+            /**
+             * @description Spotify album ID
+             * @example 4fnlNjkYSlc6nmkNo5v9nC
+             */
+            albumId: string;
+            /**
+             * @description Album name
+             * @example זמן להתעורר
+             */
+            name: string;
+            /**
+             * @description Primary artist name
+             * @example Hadag Nahash
+             */
+            artist: string;
+            /**
+             * @description Album release date (ISO format)
+             * @example 2013-03-20
+             */
+            releaseDate?: string;
+            /**
+             * @description Total number of tracks in album
+             * @example 13
+             */
+            totalTracks: number;
+            /**
+             * @description Album cover art URL
+             * @example https://i.scdn.co/image/ab67616d0000b273246dd456ad6730fb8a01c99a
+             */
+            imageUrl?: string;
+        };
+        SpotifyAlbumTrack: {
+            /**
+             * @description Spotify track ID
+             * @example 7qhrpRjKIXTEIrzXOgQLbY
+             */
+            trackId: string;
+            /**
+             * @description Track position in album (1-based)
+             * @example 1
+             */
+            position: number;
+            /**
+             * @description Track title
+             * @example מסתובב
+             */
+            name: string;
+            /**
+             * @description Artist names (comma-separated if multiple)
+             * @example Hadag Nahash
+             */
+            artists: string;
+            /**
+             * @description Album name
+             * @example זמן להתעורר
+             */
+            album?: string;
+            /**
+             * @description International Standard Recording Code
+             * @example IL4070900127
+             */
+            isrc: string;
+            /**
+             * @description Track duration in milliseconds
+             * @example 56053
+             */
+            duration_ms: number;
+            /**
+             * @description Album cover art URL
+             * @example https://i.scdn.co/image/ab67616d0000b273246dd456ad6730fb8a01c99a
+             */
+            imageUrl?: string;
+            /**
+             * @description Album release date
+             * @example 2013-03-20
+             */
+            releaseDate?: string;
         };
         /**
          * @description Audio quality for Deezer downloads
@@ -1169,6 +1289,40 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             /** @description Failed to extract metadata */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSpotifyAlbumMetadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpotifyAlbumMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description Album metadata extracted successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotifyAlbumMetadataResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Failed to extract album metadata */
             500: {
                 headers: {
                     [name: string]: unknown;

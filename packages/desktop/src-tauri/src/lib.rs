@@ -790,6 +790,49 @@ fn add_multiple_to_queue(urls: Vec<String>) -> Result<Vec<DownloadJob>, String> 
     Ok(jobs)
 }
 
+/// Add Spotify album to queue (fetches all tracks and queues them individually)
+#[tauri::command]
+async fn add_spotify_album_to_queue(album_url: String) -> Result<Vec<DownloadJob>, String> {
+    println!("[Album] Processing Spotify album: {}", album_url);
+
+    // Get album metadata from backend API
+    let api_client = api_types::HasodApiClient::production();
+
+    let album_metadata = api_client.get_spotify_album_metadata(&album_url).await?;
+
+    println!("[Album] Album: '{}' by '{}' ({} tracks)",
+             album_metadata.album.name,
+             album_metadata.album.artist,
+             album_metadata.tracks.len());
+
+    // Create jobs for each track
+    let mut jobs = Vec::new();
+    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+
+    for track in album_metadata.tracks {
+        // Create Spotify track URL from track ID
+        let track_url = format!("https://open.spotify.com/track/{}", track.track_id);
+
+        let mut job = DownloadJob::new(track_url);
+
+        // Pre-populate metadata so we don't need to fetch it again
+        job.metadata = TrackMetadata {
+            title: track.name,
+            artist: track.artists,
+            album: track.album,
+            duration: Some((track.duration_ms / 1000) as u32),
+            thumbnail: Some(track.image_url),
+        };
+
+        jobs.push(job.clone());
+        queue.push(job);
+    }
+
+    println!("[Album] ✅ Queued {} tracks from album", jobs.len());
+
+    Ok(jobs)
+}
+
 /// Get current queue status
 #[tauri::command]
 fn get_queue_status() -> Result<QueueStatus, String> {
@@ -3835,6 +3878,7 @@ pub fn run() {
             // Queue management commands
             add_to_queue,
             add_multiple_to_queue,
+            add_spotify_album_to_queue,
             get_queue_status,
             clear_completed_jobs,
             remove_from_queue,

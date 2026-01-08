@@ -49,6 +49,66 @@ pub struct SpotifyTrackMetadata {
     pub image_url: String,
 }
 
+/// Request for POST /metadata/spotify/album
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotifyAlbumMetadataRequest {
+    #[serde(rename = "spotifyUrl")]
+    pub spotify_url: String,
+}
+
+/// Response from POST /metadata/spotify/album
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotifyAlbumMetadataResponse {
+    pub success: bool,
+    pub album: SpotifyAlbumInfo,
+    pub tracks: Vec<SpotifyAlbumTrack>,
+}
+
+/// Album information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotifyAlbumInfo {
+    #[serde(rename = "albumId")]
+    pub album_id: String,
+
+    pub name: String,
+
+    pub artist: String,
+
+    #[serde(rename = "releaseDate")]
+    pub release_date: String,
+
+    #[serde(rename = "totalTracks")]
+    pub total_tracks: u32,
+
+    #[serde(rename = "imageUrl")]
+    pub image_url: String,
+}
+
+/// Individual track in album with ISRC
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotifyAlbumTrack {
+    #[serde(rename = "trackId")]
+    pub track_id: String,
+
+    pub position: u32,
+
+    pub name: String,
+
+    pub artists: String,
+
+    pub album: String,
+
+    pub isrc: String,
+
+    pub duration_ms: u32,
+
+    #[serde(rename = "imageUrl")]
+    pub image_url: String,
+
+    #[serde(rename = "releaseDate")]
+    pub release_date: String,
+}
+
 // ============================================================================
 // Download Link Retrieval API Types
 // ============================================================================
@@ -145,6 +205,39 @@ impl HasodApiClient {
         }
 
         Ok(api_response.metadata)
+    }
+
+    /// Get complete album metadata with all tracks and ISRCs
+    pub async fn get_spotify_album_metadata(&self, spotify_url: &str) -> Result<SpotifyAlbumMetadataResponse, String> {
+        let url = format!("{}/metadata/spotify/album", self.base_url);
+
+        let request = SpotifyAlbumMetadataRequest {
+            spotify_url: spotify_url.to_string(),
+        };
+
+        let response = self.client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| format!("Album API request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Album API returned status {}: {}", status, body));
+        }
+
+        let api_response: SpotifyAlbumMetadataResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse album API response: {}", e))?;
+
+        if !api_response.success {
+            return Err("Album API returned success=false".to_string());
+        }
+
+        Ok(api_response)
     }
 
     /// Get Deezer download URL from ISRC

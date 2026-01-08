@@ -119,7 +119,14 @@ function App() {
     }
 
     try {
-      await invoke('add_to_queue', { url });
+      // Detect if URL is a Spotify album
+      if (url.includes('spotify.com/album') || url.startsWith('spotify:album:')) {
+        console.log('[App] Detected Spotify album, fetching tracks...');
+        await invoke('add_spotify_album_to_queue', { albumUrl: url });
+      } else {
+        await invoke('add_to_queue', { url });
+      }
+
       await invoke('start_queue_processing');
       const status = await invoke<QueueStatus>('get_queue_status');
       setQueueStatus(status);
@@ -274,7 +281,14 @@ function App() {
     }
 
     try {
-      await invoke<DownloadJob>('add_to_queue', { url: downloadUrl });
+      // Detect if URL is a Spotify album
+      if (downloadUrl.includes('spotify.com/album') || downloadUrl.startsWith('spotify:album:')) {
+        console.log('[App] Detected Spotify album, fetching all tracks...');
+        await invoke('add_spotify_album_to_queue', { albumUrl: downloadUrl });
+      } else {
+        await invoke<DownloadJob>('add_to_queue', { url: downloadUrl });
+      }
+
       setDownloadUrl('');
       await invoke('start_queue_processing');
       const status = await invoke<QueueStatus>('get_queue_status');
