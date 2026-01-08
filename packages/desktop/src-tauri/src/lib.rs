@@ -1212,10 +1212,13 @@ fn decrypt_deezer_file(encrypted_data: &[u8], decryption_key_hex: &str) -> Resul
 /// Download and decrypt track from Deezer using ISRC
 /// Returns the path to the decrypted MP3 file
 async fn download_and_decrypt_from_deezer(
+    app: &AppHandle,
     isrc: &str,
     auth_token: &str,
     output_path: &str,
+    artwork_url: Option<&str>,
 ) -> Result<String, String> {
+    use tauri_plugin_shell::ShellExt;
     println!("[Deezer] Attempting download for ISRC: {}", isrc);
 
     // Step 1: Get download URL and decryption key from backend
@@ -1265,6 +1268,58 @@ async fn download_and_decrypt_from_deezer(
         .map_err(|e| format!("Failed to write decrypted file: {}", e))?;
 
     println!("[Deezer] ✅ Saved to: {}", output_path);
+
+    // Step 5: Download and embed artwork if available
+    if let Some(artwork_url) = artwork_url {
+        println!("[Deezer] Downloading and embedding artwork...");
+
+        // Download artwork
+        let artwork_response = client.get(artwork_url).send().await;
+
+        if let Ok(artwork_resp) = artwork_response {
+            if artwork_resp.status().is_success() {
+                if let Ok(artwork_bytes) = artwork_resp.bytes().await {
+                    // Save artwork temporarily
+                    let artwork_path = format!("{}.jpg", output_path.trim_end_matches(".mp3"));
+                    if std::fs::write(&artwork_path, &artwork_bytes).is_ok() {
+                        // Use ffmpeg to embed artwork
+                        let temp_output = format!("{}.temp.mp3", output_path.trim_end_matches(".mp3"));
+
+                        match app.shell().sidecar("ffmpeg") {
+                            Ok(sidecar) => {
+                                let result = sidecar.args(&[
+                                    "-i", output_path,
+                                    "-i", &artwork_path,
+                                    "-map", "0:a",
+                                    "-map", "1:0",
+                                    "-c", "copy",
+                                    "-id3v2_version", "3",
+                                    "-metadata:s:v", "title=Album cover",
+                                    "-metadata:s:v", "comment=Cover (front)",
+                                    "-y",
+                                    &temp_output,
+                                ]).status().await;
+
+                                if let Ok(status) = result {
+                                    if status.success() {
+                                        // Replace original with artwork-embedded version
+                                        std::fs::rename(&temp_output, output_path).ok();
+                                        println!("[Deezer] ✅ Artwork embedded");
+                                    }
+                                }
+                            }
+                            Err(_) => {
+                                println!("[Deezer] ⚠️ ffmpeg not available, skipping artwork");
+                            }
+                        }
+
+                        // Clean up temp artwork file
+                        std::fs::remove_file(&artwork_path).ok();
+                    }
+                }
+            }
+        }
+    }
 
     Ok(output_path.to_string())
 }
@@ -2179,8 +2234,14 @@ async fn process_download_job(app: &AppHandle, job_id: String, base_output_dir: 
             let output_path = get_organized_output_path(&base_output_dir, &temp_metadata, context);
             let temp_deezer_path = output_path.to_string_lossy().to_string();
 
-            // Try Deezer download + decrypt
-            match download_and_decrypt_from_deezer(&spotify_metadata.isrc, &auth_token, &temp_deezer_path).await {
+            // Try Deezer download + decrypt with artwork
+            match download_and_decrypt_from_deezer(
+                app,
+                &spotify_metadata.isrc,
+                &auth_token,
+                &temp_deezer_path,
+                Some(&spotify_metadata.image_url)
+            ).await {
                 Ok(deezer_file_path) => {
                     println!("[Spotify] ✅ Deezer download successful!");
                     println!("[Spotify] File ready at: {}", deezer_file_path);
