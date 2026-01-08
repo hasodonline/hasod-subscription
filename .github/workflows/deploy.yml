@@ -65,14 +65,35 @@ jobs:
       # ============================================
       - name: Create functions environment config
         run: |
-          cat > packages/functions/.env.yaml << EOF
-          PAYPAL_CLIENT_ID: "${{ secrets.PAYPAL_CLIENT_ID }}"
-          PAYPAL_CLIENT_SECRET: "${{ secrets.PAYPAL_CLIENT_SECRET }}"
-          PAYPAL_SANDBOX: "false"
-          GOOGLE_SERVICE_ACCOUNT_KEY: '${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}'
-          GOOGLE_ADMIN_EMAIL: "hasod@hasodonline.com"
-          OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}"
-          DEEZER_ARL: "${{ secrets.DEEZER_ARL }}"
+          cat > packages/functions/.env << EOF
+          # Firebase Functions v2 Environment Variables (from GitHub Secrets)
+          # This file is auto-generated during CI/CD deployment
+
+          # Application Configuration
+          APP_URL=https://hasod-41a23.web.app
+
+          # PayPal Configuration
+          PAYPAL_CLIENT_ID=${{ secrets.PAYPAL_CLIENT_ID }}
+          PAYPAL_CLIENT_SECRET=${{ secrets.PAYPAL_CLIENT_SECRET }}
+          PAYPAL_SANDBOX=false
+
+          # Google Workspace Configuration
+          GOOGLE_ADMIN_EMAIL=hasod@hasodonline.com
+          GOOGLE_SERVICE_ACCOUNT_KEY=${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}
+
+          # OpenAI Configuration
+          OPENAI_API_KEY=${{ secrets.OPENAI_API_KEY }}
+
+          # Deezer Configuration
+          DEEZER_ARL=${{ secrets.DEEZER_ARL }}
+
+          # Proxy Configuration
+          PROXY_ENABLED=${{ secrets.PROXY_ENABLED }}
+          PROXY_HOST=${{ secrets.PROXY_HOST }}
+          PROXY_PORT_MIN=${{ secrets.PROXY_PORT_MIN }}
+          PROXY_PORT_MAX=${{ secrets.PROXY_PORT_MAX }}
+          PROXY_USERNAME=${{ secrets.PROXY_USERNAME }}
+          PROXY_PASSWORD=${{ secrets.PROXY_PASSWORD }}
           EOF
 
       # ============================================
