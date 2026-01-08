@@ -196,6 +196,8 @@ pub struct DownloadJob {
     pub started_at: Option<i64>,
     pub completed_at: Option<i64>,
     pub error: Option<String>,
+    #[serde(skip)]  // Don't serialize to frontend
+    pub download_context: Option<DownloadContext>,
 }
 
 impl DownloadJob {
@@ -222,6 +224,7 @@ impl DownloadJob {
             started_at: None,
             completed_at: None,
             error: None,
+            download_context: Some(DownloadContext::Single), // Default to single track
         }
     }
 
@@ -809,6 +812,9 @@ async fn add_spotify_album_to_queue(album_url: String) -> Result<Vec<DownloadJob
     let mut jobs = Vec::new();
     let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
 
+    // Create download context for album
+    let album_context = DownloadContext::Album(album_metadata.album.name.clone());
+
     for track in album_metadata.tracks {
         // Create Spotify track URL from track ID
         let track_url = format!("https://open.spotify.com/track/{}", track.track_id);
@@ -824,11 +830,63 @@ async fn add_spotify_album_to_queue(album_url: String) -> Result<Vec<DownloadJob
             thumbnail: Some(track.image_url),
         };
 
+        // Set album context for proper file organization
+        job.download_context = Some(album_context.clone());
+
         jobs.push(job.clone());
         queue.push(job);
     }
 
     println!("[Album] ✅ Queued {} tracks from album", jobs.len());
+
+    Ok(jobs)
+}
+
+/// Add Spotify playlist to queue (fetches all tracks and queues them individually)
+#[tauri::command]
+async fn add_spotify_playlist_to_queue(playlist_url: String) -> Result<Vec<DownloadJob>, String> {
+    println!("[Playlist] Processing Spotify playlist: {}", playlist_url);
+
+    // Get playlist metadata from backend API
+    let api_client = api_types::HasodApiClient::production();
+
+    let playlist_metadata = api_client.get_spotify_playlist_metadata(&playlist_url).await?;
+
+    println!("[Playlist] Playlist: '{}' by '{}' ({} tracks)",
+             playlist_metadata.playlist.name,
+             playlist_metadata.playlist.owner,
+             playlist_metadata.tracks.len());
+
+    // Create jobs for each track
+    let mut jobs = Vec::new();
+    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+
+    // Create download context for playlist
+    let playlist_context = DownloadContext::Playlist(playlist_metadata.playlist.name.clone());
+
+    for track in playlist_metadata.tracks {
+        // Create Spotify track URL from track ID
+        let track_url = format!("https://open.spotify.com/track/{}", track.track_id);
+
+        let mut job = DownloadJob::new(track_url);
+
+        // Pre-populate metadata so we don't need to fetch it again
+        job.metadata = TrackMetadata {
+            title: track.name,
+            artist: track.artists,
+            album: track.album,
+            duration: Some((track.duration_ms / 1000) as u32),
+            thumbnail: Some(track.image_url),
+        };
+
+        // Set playlist context for proper file organization
+        job.download_context = Some(playlist_context.clone());
+
+        jobs.push(job.clone());
+        queue.push(job);
+    }
+
+    println!("[Playlist] ✅ Queued {} tracks from playlist", jobs.len());
 
     Ok(jobs)
 }
@@ -890,21 +948,55 @@ fn sanitize_filename(name: &str) -> String {
         .to_string()
 }
 
+/// Context for determining file organization
+#[derive(Debug, Clone, PartialEq)]
+enum DownloadContext {
+    Single,              // Single track download
+    Album(String),       // Album download with album name
+    Playlist(String),    // Playlist download with playlist name
+}
+
 /// Helper function to create organized folder structure
-fn get_organized_output_path(base_dir: &str, metadata: &TrackMetadata) -> PathBuf {
+/// - Single track: /unsorted/artist - song.mp3
+/// - Album: /artist/album name/artist - song.mp3
+/// - Playlist: /playlist_name/artist - song.mp3
+/// - Filename format MUST be: artist - song.mp3 (not just song.mp3)
+fn get_organized_output_path(base_dir: &str, metadata: &TrackMetadata, context: &DownloadContext) -> PathBuf {
     let artist = sanitize_filename(&metadata.artist);
-    let album = sanitize_filename(&metadata.album);
     let title = sanitize_filename(&metadata.title);
 
-    // Create path: base_dir/Artist/Album/Title.mp3
-    let path = PathBuf::from(base_dir)
-        .join(if artist.is_empty() || artist == "Unknown Artist" { "Unknown Artist" } else { &artist })
-        .join(if album.is_empty() || album == "Unknown Album" { "Singles" } else { &album });
+    // Filename is always: "artist - song.mp3"
+    let filename = if artist.is_empty() || artist == "Unknown Artist" {
+        format!("{}.mp3", title)
+    } else {
+        format!("{} - {}.mp3", artist, title)
+    };
+
+    // Determine folder structure based on context
+    let path = match context {
+        DownloadContext::Single => {
+            // Single track: /unsorted/
+            PathBuf::from(base_dir).join("unsorted")
+        }
+        DownloadContext::Album(album_name) => {
+            // Album: /artist/album name/
+            let album = sanitize_filename(album_name);
+            PathBuf::from(base_dir)
+                .join(if artist.is_empty() || artist == "Unknown Artist" { "Unknown Artist" } else { &artist })
+                .join(if album.is_empty() { "Unknown Album" } else { &album })
+        }
+        DownloadContext::Playlist(playlist_name) => {
+            // Playlist: /playlist_name/
+            let playlist = sanitize_filename(playlist_name);
+            PathBuf::from(base_dir)
+                .join(if playlist.is_empty() { "Unknown Playlist" } else { &playlist })
+        }
+    };
 
     // Ensure directory exists
     fs::create_dir_all(&path).ok();
 
-    path.join(format!("{}.mp3", title))
+    path.join(filename)
 }
 
 /// Parse yt-dlp progress output to extract percentage
@@ -1989,10 +2081,10 @@ async fn process_download_job(app: &AppHandle, job_id: String, base_output_dir: 
     use tauri_plugin_shell::ShellExt;
 
     // Get job details
-    let (url, service, initial_title) = {
+    let (url, service, initial_title, download_context) = {
         let queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
         let job = queue.iter().find(|j| j.id == job_id).ok_or("Job not found")?;
-        (job.url.clone(), job.service.clone(), job.metadata.title.clone())
+        (job.url.clone(), job.service.clone(), job.metadata.title.clone(), job.download_context.clone())
     };
 
     // Helper to get queued count for floating panel
@@ -2083,7 +2175,8 @@ async fn process_download_job(app: &AppHandle, job_id: String, base_output_dir: 
                 duration: Some((spotify_metadata.duration_ms / 1000) as u32),
                 thumbnail: Some(spotify_metadata.image_url.clone()),
             };
-            let output_path = get_organized_output_path(&base_output_dir, &temp_metadata);
+            let context = download_context.as_ref().unwrap_or(&DownloadContext::Single);
+            let output_path = get_organized_output_path(&base_output_dir, &temp_metadata, context);
             let temp_deezer_path = output_path.to_string_lossy().to_string();
 
             // Try Deezer download + decrypt
@@ -2282,8 +2375,9 @@ async fn process_download_job(app: &AppHandle, job_id: String, base_output_dir: 
         meta
     };
 
-    // Calculate output path based on metadata
-    let output_path = get_organized_output_path(&base_output_dir, &metadata);
+    // Calculate output path based on metadata and context
+    let context = download_context.as_ref().unwrap_or(&DownloadContext::Single);
+    let output_path = get_organized_output_path(&base_output_dir, &metadata, context);
     let output_dir = output_path.parent().unwrap().to_string_lossy().to_string();
 
     // Ensure output directory exists
@@ -3879,6 +3973,7 @@ pub fn run() {
             add_to_queue,
             add_multiple_to_queue,
             add_spotify_album_to_queue,
+            add_spotify_playlist_to_queue,
             get_queue_status,
             clear_completed_jobs,
             remove_from_queue,

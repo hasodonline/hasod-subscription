@@ -376,6 +376,35 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/metadata/spotify/playlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Extract Spotify playlist metadata with all tracks
+         * @description Extracts complete playlist metadata including all tracks with ISRCs.
+         *     Returns playlist information and a list of all tracks with their metadata.
+         *
+         *     **Batch Processing:**
+         *     - Fetches up to 100 tracks per request
+         *     - Each track includes ISRC for Deezer matching
+         *     - Handles large playlists efficiently
+         *
+         *     Uses Spotify's public embed page to obtain an anonymous access token,
+         *     then calls the Spotify API. No authentication required.
+         */
+        post: operations["getSpotifyPlaylistMetadata"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/download/deezer/isrc": {
         parameters: {
             query?: never;
@@ -785,6 +814,87 @@ export interface components {
              * @example 2013-03-20
              */
             releaseDate?: string;
+        };
+        SpotifyPlaylistMetadataRequest: {
+            /**
+             * @description Spotify playlist URL (e.g., https://open.spotify.com/playlist/xxx)
+             * @example https://open.spotify.com/playlist/4aneLdCay41fO9M1JYSTpq
+             */
+            spotifyUrl: string;
+        };
+        SpotifyPlaylistMetadataResponse: {
+            success: boolean;
+            playlist: components["schemas"]["SpotifyPlaylistInfo"];
+            tracks: components["schemas"]["SpotifyPlaylistTrack"][];
+        };
+        SpotifyPlaylistInfo: {
+            /**
+             * @description Spotify playlist ID
+             * @example 4aneLdCay41fO9M1JYSTpq
+             */
+            playlistId: string;
+            /**
+             * @description Playlist name
+             * @example Assets
+             */
+            name: string;
+            /**
+             * @description Playlist owner/creator name
+             * @example Noga scliar
+             */
+            owner: string;
+            /**
+             * @description Playlist description
+             * @example My favorite tracks
+             */
+            description?: string;
+            /**
+             * @description Total number of tracks in playlist
+             * @example 88
+             */
+            totalTracks: number;
+            /**
+             * @description Playlist cover image URL
+             * @example https://mosaic.scdn.co/640/...
+             */
+            imageUrl?: string;
+        };
+        SpotifyPlaylistTrack: {
+            /**
+             * @description Spotify track ID
+             * @example 7pdF27mSDuPWhppnHAmWHa
+             */
+            trackId: string;
+            /**
+             * @description Track position in playlist (1-based)
+             * @example 1
+             */
+            position: number;
+            /**
+             * @description Track title
+             * @example whoa (mind in awe)
+             */
+            name: string;
+            /**
+             * @description Artist names (comma-separated if multiple)
+             * @example XXXTENTACION
+             */
+            artists: string;
+            /**
+             * @description Album name
+             * @example SKINS
+             */
+            album: string;
+            /**
+             * @description International Standard Recording Code
+             * @example USUYG1226220
+             */
+            isrc: string;
+            /**
+             * @description Track duration in milliseconds
+             * @example 157776
+             */
+            duration_ms: number;
         };
         /**
          * @description Audio quality for Deezer downloads
@@ -1323,6 +1433,40 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             /** @description Failed to extract album metadata */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getSpotifyPlaylistMetadata: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SpotifyPlaylistMetadataRequest"];
+            };
+        };
+        responses: {
+            /** @description Playlist metadata extracted successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SpotifyPlaylistMetadataResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            /** @description Failed to extract playlist metadata */
             500: {
                 headers: {
                     [name: string]: unknown;

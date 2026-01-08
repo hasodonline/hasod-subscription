@@ -123,7 +123,13 @@ function App() {
       if (url.includes('spotify.com/album') || url.startsWith('spotify:album:')) {
         console.log('[App] Detected Spotify album, fetching tracks...');
         await invoke('add_spotify_album_to_queue', { albumUrl: url });
-      } else {
+      }
+      // Detect if URL is a Spotify playlist
+      else if (url.includes('spotify.com/playlist') || url.startsWith('spotify:playlist:')) {
+        console.log('[App] Detected Spotify playlist, fetching tracks...');
+        await invoke('add_spotify_playlist_to_queue', { playlistUrl: url });
+      }
+      else {
         await invoke('add_to_queue', { url });
       }
 
@@ -285,7 +291,13 @@ function App() {
       if (downloadUrl.includes('spotify.com/album') || downloadUrl.startsWith('spotify:album:')) {
         console.log('[App] Detected Spotify album, fetching all tracks...');
         await invoke('add_spotify_album_to_queue', { albumUrl: downloadUrl });
-      } else {
+      }
+      // Detect if URL is a Spotify playlist
+      else if (downloadUrl.includes('spotify.com/playlist') || downloadUrl.startsWith('spotify:playlist:')) {
+        console.log('[App] Detected Spotify playlist, fetching all tracks...');
+        await invoke('add_spotify_playlist_to_queue', { playlistUrl: downloadUrl });
+      }
+      else {
         await invoke<DownloadJob>('add_to_queue', { url: downloadUrl });
       }
 

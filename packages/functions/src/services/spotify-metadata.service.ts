@@ -47,6 +47,32 @@ export interface SpotifyAlbumMetadata {
   tracks: SpotifyAlbumTrack[];
 }
 
+export interface SpotifyPlaylistInfo {
+  playlistId: string;
+  name: string;
+  owner: string;
+  description: string;
+  totalTracks: number;
+  imageUrl: string;
+}
+
+export interface SpotifyPlaylistTrack {
+  trackId: string;
+  position: number;
+  name: string;
+  artists: string;
+  album: string;
+  isrc: string;
+  duration_ms: number;
+  imageUrl: string;
+  releaseDate: string;
+}
+
+export interface SpotifyPlaylistMetadata {
+  playlist: SpotifyPlaylistInfo;
+  tracks: SpotifyPlaylistTrack[];
+}
+
 export class SpotifyMetadataService {
   /**
    * Extract track ID from Spotify URL
@@ -238,7 +264,7 @@ export class SpotifyMetadataService {
   /**
    * Get anonymous access token from Spotify embed page
    */
-  private async getEmbedAccessToken(type: 'track' | 'album', id: string): Promise<string> {
+  private async getEmbedAccessToken(type: 'track' | 'album' | 'playlist', id: string): Promise<string> {
     console.log(`[Spotify Embed] Getting access token for ${type}: ${id}`);
 
     const embedUrl = `https://open.spotify.com/embed/${type}/${id}`;
@@ -259,6 +285,27 @@ export class SpotifyMetadataService {
     console.log(`[Spotify Embed] ✅ Got access token`);
 
     return accessToken;
+  }
+
+  /**
+   * Extract playlist ID from Spotify URL
+   */
+  private extractPlaylistId(url: string): string {
+    // Handle URLs like:
+    // - https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M
+    // - https://open.spotify.com/playlist/37i9dQZF1DXcBWIGoYBM5M?si=xxx
+    // - spotify:playlist:37i9dQZF1DXcBWIGoYBM5M
+
+    if (url.startsWith('spotify:playlist:')) {
+      return url.replace('spotify:playlist:', '');
+    }
+
+    const match = url.match(/playlist\/([a-zA-Z0-9]+)/);
+    if (!match) {
+      throw new Error('Invalid Spotify playlist URL');
+    }
+
+    return match[1];
   }
 
   /**
@@ -330,6 +377,91 @@ export class SpotifyMetadataService {
 
     return {
       album: albumInfo,
+      tracks,
+    };
+  }
+
+  /**
+   * Get complete playlist metadata with all tracks and ISRCs
+   */
+  async getPlaylistMetadata(spotifyUrl: string): Promise<SpotifyPlaylistMetadata> {
+    console.log(`[Spotify Playlist] Fetching playlist metadata for: ${spotifyUrl}`);
+
+    const playlistId = this.extractPlaylistId(spotifyUrl);
+    console.log(`[Spotify Playlist] Playlist ID: ${playlistId}`);
+
+    // Get embed access token
+    const accessToken = await this.getEmbedAccessToken('playlist', playlistId);
+
+    // Get playlist info
+    console.log(`[Spotify Playlist] Fetching playlist info...`);
+    const playlistResponse = await axios.get(
+      `https://api.spotify.com/v1/playlists/${playlistId}`,
+      {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      }
+    );
+
+    const playlistData = playlistResponse.data;
+    const trackIds = playlistData.tracks.items
+      .filter((item: any) => item.track && item.track.id) // Filter out null tracks
+      .map((item: any) => item.track.id);
+
+    console.log(`[Spotify Playlist] Playlist: "${playlistData.name}" by "${playlistData.owner.display_name}"`);
+    console.log(`[Spotify Playlist] Total tracks: ${trackIds.length}`);
+
+    // Get all track details with ISRCs (batch - up to 50 tracks per request)
+    console.log(`[Spotify Playlist] Fetching ISRCs for all ${trackIds.length} tracks...`);
+
+    const allTracks: any[] = [];
+    const chunkSize = 50; // Spotify API limit for batch track requests
+
+    for (let i = 0; i < trackIds.length; i += chunkSize) {
+      const chunk = trackIds.slice(i, i + chunkSize);
+      console.log(`[Spotify Playlist] Fetching chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(trackIds.length / chunkSize)} (${chunk.length} tracks)`);
+
+      const tracksResponse = await axios.get(
+        'https://api.spotify.com/v1/tracks',
+        {
+          params: {
+            ids: chunk.join(','),
+          },
+          headers: {
+            'Authorization': `Bearer ${accessToken}`,
+          },
+        }
+      );
+
+      allTracks.push(...tracksResponse.data.tracks);
+    }
+
+    const playlistInfo: SpotifyPlaylistInfo = {
+      playlistId: playlistData.id,
+      name: playlistData.name,
+      owner: playlistData.owner.display_name,
+      description: playlistData.description || '',
+      totalTracks: trackIds.length,
+      imageUrl: playlistData.images[0]?.url || '',
+    };
+
+    const tracks: SpotifyPlaylistTrack[] = allTracks.map((track: any, idx: number) => ({
+      trackId: track.id,
+      position: idx + 1,
+      name: track.name,
+      artists: track.artists.map((a: any) => a.name).join(', '),
+      album: track.album.name,
+      isrc: track.external_ids?.isrc,
+      duration_ms: track.duration_ms,
+      imageUrl: track.album.images[0]?.url || '',
+      releaseDate: track.album.release_date,
+    }));
+
+    console.log(`[Spotify Playlist] ✅ Got ${tracks.length} tracks with ISRCs`);
+
+    return {
+      playlist: playlistInfo,
       tracks,
     };
   }

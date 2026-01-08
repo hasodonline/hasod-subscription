@@ -109,6 +109,65 @@ pub struct SpotifyAlbumTrack {
     pub release_date: String,
 }
 
+/// Request for POST /metadata/spotify/playlist
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotifyPlaylistMetadataRequest {
+    #[serde(rename = "spotifyUrl")]
+    pub spotify_url: String,
+}
+
+/// Response from POST /metadata/spotify/playlist
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotifyPlaylistMetadataResponse {
+    pub success: bool,
+    pub playlist: SpotifyPlaylistInfo,
+    pub tracks: Vec<SpotifyPlaylistTrack>,
+}
+
+/// Playlist information
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotifyPlaylistInfo {
+    #[serde(rename = "playlistId")]
+    pub playlist_id: String,
+
+    pub name: String,
+
+    pub owner: String,
+
+    pub description: String,
+
+    #[serde(rename = "totalTracks")]
+    pub total_tracks: u32,
+
+    #[serde(rename = "imageUrl")]
+    pub image_url: String,
+}
+
+/// Individual track in playlist with ISRC
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SpotifyPlaylistTrack {
+    #[serde(rename = "trackId")]
+    pub track_id: String,
+
+    pub position: u32,
+
+    pub name: String,
+
+    pub artists: String,
+
+    pub album: String,
+
+    pub isrc: String,
+
+    pub duration_ms: u32,
+
+    #[serde(rename = "imageUrl")]
+    pub image_url: String,
+
+    #[serde(rename = "releaseDate")]
+    pub release_date: String,
+}
+
 // ============================================================================
 // Download Link Retrieval API Types
 // ============================================================================
@@ -235,6 +294,39 @@ impl HasodApiClient {
 
         if !api_response.success {
             return Err("Album API returned success=false".to_string());
+        }
+
+        Ok(api_response)
+    }
+
+    /// Get complete playlist metadata with all tracks and ISRCs
+    pub async fn get_spotify_playlist_metadata(&self, spotify_url: &str) -> Result<SpotifyPlaylistMetadataResponse, String> {
+        let url = format!("{}/metadata/spotify/playlist", self.base_url);
+
+        let request = SpotifyPlaylistMetadataRequest {
+            spotify_url: spotify_url.to_string(),
+        };
+
+        let response = self.client
+            .post(&url)
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| format!("Playlist API request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Playlist API returned status {}: {}", status, body));
+        }
+
+        let api_response: SpotifyPlaylistMetadataResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse playlist API response: {}", e))?;
+
+        if !api_response.success {
+            return Err("Playlist API returned success=false".to_string());
         }
 
         Ok(api_response)

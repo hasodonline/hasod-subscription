@@ -494,6 +494,45 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /metadata/spotify/playlist:
+    post:
+      operationId: getSpotifyPlaylistMetadata
+      summary: Extract Spotify playlist metadata with all tracks
+      description: |
+        Extracts complete playlist metadata including all tracks with ISRCs.
+        Returns playlist information and a list of all tracks with their metadata.
+
+        **Batch Processing:**
+        - Fetches up to 100 tracks per request
+        - Each track includes ISRC for Deezer matching
+        - Handles large playlists efficiently
+
+        Uses Spotify's public embed page to obtain an anonymous access token,
+        then calls the Spotify API. No authentication required.
+      tags: [Metadata]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SpotifyPlaylistMetadataRequest'
+      responses:
+        '200':
+          description: Playlist metadata extracted successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SpotifyPlaylistMetadataResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '500':
+          description: Failed to extract playlist metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   # ===========================================================================
   # Download Link Retrieval
   # ===========================================================================
@@ -1266,6 +1305,91 @@ components:
           type: string
           description: Album release date
           example: "2013-03-20"
+
+    SpotifyPlaylistMetadataRequest:
+      type: object
+      required: [spotifyUrl]
+      properties:
+        spotifyUrl:
+          type: string
+          description: |
+            Spotify playlist URL (e.g., https://open.spotify.com/playlist/xxx)
+          example: "https://open.spotify.com/playlist/4aneLdCay41fO9M1JYSTpq"
+
+    SpotifyPlaylistMetadataResponse:
+      type: object
+      required: [success, playlist, tracks]
+      properties:
+        success:
+          type: boolean
+        playlist:
+          $ref: '#/components/schemas/SpotifyPlaylistInfo'
+        tracks:
+          type: array
+          items:
+            $ref: '#/components/schemas/SpotifyPlaylistTrack'
+
+    SpotifyPlaylistInfo:
+      type: object
+      required: [playlistId, name, owner, totalTracks]
+      properties:
+        playlistId:
+          type: string
+          description: Spotify playlist ID
+          example: "4aneLdCay41fO9M1JYSTpq"
+        name:
+          type: string
+          description: Playlist name
+          example: "Assets"
+        owner:
+          type: string
+          description: Playlist owner/creator name
+          example: "Noga scliar"
+        description:
+          type: string
+          description: Playlist description
+          example: "My favorite tracks"
+        totalTracks:
+          type: integer
+          description: Total number of tracks in playlist
+          example: 88
+        imageUrl:
+          type: string
+          description: Playlist cover image URL
+          example: "https://mosaic.scdn.co/640/..."
+
+    SpotifyPlaylistTrack:
+      type: object
+      required: [trackId, position, name, artists, album, isrc, duration_ms]
+      properties:
+        trackId:
+          type: string
+          description: Spotify track ID
+          example: "7pdF27mSDuPWhppnHAmWHa"
+        position:
+          type: integer
+          description: Track position in playlist (1-based)
+          example: 1
+        name:
+          type: string
+          description: Track title
+          example: "whoa (mind in awe)"
+        artists:
+          type: string
+          description: Artist names (comma-separated if multiple)
+          example: "XXXTENTACION"
+        album:
+          type: string
+          description: Album name
+          example: "SKINS"
+        isrc:
+          type: string
+          description: International Standard Recording Code
+          example: "USUYG1226220"
+        duration_ms:
+          type: integer
+          description: Track duration in milliseconds
+          example: 157776
 
     # -------------------------------------------------------------------------
     # Download Link Retrieval Schemas
