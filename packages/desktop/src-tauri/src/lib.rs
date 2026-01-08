@@ -30,8 +30,11 @@ use api_types::{HasodApiClient, SpotifyTrackMetadata, DeezerQuality};
 
 // Blowfish decryption imports
 use blowfish::Blowfish;
-use cipher::{BlockDecrypt, KeyInit};
+use cipher::{BlockDecryptMut, KeyIvInit};
+use cbc::Decryptor;
 use md5::{Digest as Md5Digest, Md5};
+
+type BlowfishCbc = Decryptor<Blowfish>;
 
 
 // ============================================================================
@@ -1024,7 +1027,7 @@ async fn get_spotify_metadata_from_api(url: &str) -> Result<SpotifyTrackMetadata
 // Deezer Download & Decryption Functions
 // ============================================================================
 
-/// Decrypt Deezer encrypted MP3/FLAC file using Blowfish BF-CBC
+/// Decrypt Deezer encrypted MP3/FLAC file using Blowfish CBC
 /// Deezer uses a custom encryption scheme where only certain chunks are encrypted
 fn decrypt_deezer_file(encrypted_data: &[u8], decryption_key_hex: &str) -> Result<Vec<u8>, String> {
     // Parse hex key to bytes
@@ -1035,40 +1038,35 @@ fn decrypt_deezer_file(encrypted_data: &[u8], decryption_key_hex: &str) -> Resul
         return Err(format!("Invalid key length: {} bytes (expected 16)", key_bytes.len()));
     }
 
-    // Initialize Blowfish cipher with explicit type annotation
-    let cipher: Blowfish = Blowfish::new_from_slice(&key_bytes)
-        .map_err(|e| format!("Failed to initialize Blowfish: {}", e))?;
-
     let mut decrypted_data = encrypted_data.to_vec();
 
     // Deezer encryption scheme: only every third 2048-byte chunk is encrypted
     const CHUNK_SIZE: usize = 2048;
     let chunks_count = encrypted_data.len() / CHUNK_SIZE;
 
+    // IV for Deezer CBC mode (constant: 0, 1, 2, 3, 4, 5, 6, 7)
+    let iv: [u8; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
+
     for chunk_idx in 0..chunks_count {
         // Only decrypt every third chunk (chunks 0, 3, 6, 9, ...)
         if chunk_idx % 3 == 0 {
             let chunk_start = chunk_idx * CHUNK_SIZE;
-            let chunk_end = chunk_start + CHUNK_SIZE;
+            let chunk_end = (chunk_start + CHUNK_SIZE).min(decrypted_data.len());
+            let chunk_len = chunk_end - chunk_start;
 
-            // Decrypt in 8-byte blocks (Blowfish block size)
-            for block_offset in (0..CHUNK_SIZE).step_by(8) {
-                let block_start = chunk_start + block_offset;
-                let block_end = block_start + 8;
+            // Only decrypt if we have a full or nearly-full chunk
+            if chunk_len >= 8 {
+                // Initialize CBC decryptor for this chunk
+                let cipher = BlowfishCbc::new_from_slices(&key_bytes, &iv)
+                    .map_err(|e| format!("Failed to initialize Blowfish CBC: {}", e))?;
 
-                if block_end <= decrypted_data.len() {
-                    // Get block as array
-                    let mut block: [u8; 8] = decrypted_data[block_start..block_end]
-                        .try_into()
-                        .unwrap();
+                // Get mutable slice for this chunk (must be aligned to 8-byte blocks)
+                let blocks_len = (chunk_len / 8) * 8; // Round down to block boundary
+                let chunk_data = &mut decrypted_data[chunk_start..(chunk_start + blocks_len)];
 
-                    // Decrypt block in-place using generic array
-                    let block_ref = cipher::generic_array::GenericArray::from_mut_slice(&mut block);
-                    cipher.decrypt_block(block_ref);
-
-                    // Write decrypted block back
-                    decrypted_data[block_start..block_end].copy_from_slice(&block);
-                }
+                // Decrypt the chunk in-place
+                cipher.decrypt_padded_mut::<cipher::block_padding::NoPadding>(chunk_data)
+                    .map_err(|e| format!("Decryption failed: {}", e))?;
             }
         }
     }

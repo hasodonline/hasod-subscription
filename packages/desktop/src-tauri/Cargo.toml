@@ -41,6 +41,7 @@ urlencoding = "2"
 
 # Blowfish decryption for Deezer downloads
 blowfish = "0.9"
+cbc = "0.1"
 cipher = "0.4"
 md-5 = "0.10"
 
