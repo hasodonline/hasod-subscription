@@ -30,6 +30,7 @@ tsconfig.*.json
 .DS_Store
 Thumbs.db
 
-# IMPORTANT: Explicitly include bin/ directory with yt-dlp
+# IMPORTANT: Explicitly include these files
 !bin/
 !bin/yt-dlp
+!.env.yaml
