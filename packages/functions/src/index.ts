@@ -1,7 +1,7 @@
 /**
  * Hasod Subscription Management Cloud Functions
  * Clean Architecture with Service Layer Pattern
- * Updated: 2026-01-04 - Migrated to .env, upgraded to 2nd Gen functions
+ * Updated: 2026-01-08 - Added Deezer download link retrieval endpoint
  *
  * @module functions/index
  */
