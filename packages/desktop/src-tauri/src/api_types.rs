@@ -50,6 +50,44 @@ pub struct SpotifyTrackMetadata {
 }
 
 // ============================================================================
+// Download Link Retrieval API Types
+// ============================================================================
+
+/// Quality options for Deezer downloads
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DeezerQuality {
+    Mp3128,
+    Mp3320,
+    Flac,
+}
+
+impl Default for DeezerQuality {
+    fn default() -> Self {
+        DeezerQuality::Mp3320
+    }
+}
+
+/// Request for POST /download/deezer/isrc
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeezerIsrcRequest {
+    pub isrc: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub quality: Option<DeezerQuality>,
+}
+
+/// Response from POST /download/deezer/isrc
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DeezerDownloadUrlResponse {
+    pub success: bool,
+    #[serde(rename = "downloadUrl")]
+    pub download_url: String,
+    pub quality: DeezerQuality,
+    #[serde(rename = "decryptionKey")]
+    pub decryption_key: String,
+}
+
+// ============================================================================
 // API Client
 // ============================================================================
 
@@ -105,5 +143,46 @@ impl HasodApiClient {
         }
 
         Ok(api_response.metadata)
+    }
+
+    /// Get Deezer download URL from ISRC
+    /// Requires authentication token for hasod-downloader subscription
+    pub async fn get_deezer_download_url(
+        &self,
+        isrc: &str,
+        auth_token: &str,
+        quality: Option<DeezerQuality>,
+    ) -> Result<DeezerDownloadUrlResponse, String> {
+        let url = format!("{}/download/deezer/isrc", self.base_url);
+
+        let request = DeezerIsrcRequest {
+            isrc: isrc.to_string(),
+            quality,
+        };
+
+        let response = self.client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", auth_token))
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| format!("Deezer API request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+            return Err(format!("Deezer API returned status {}: {}", status, body));
+        }
+
+        let api_response: DeezerDownloadUrlResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse Deezer API response: {}", e))?;
+
+        if !api_response.success {
+            return Err("Deezer API returned success=false".to_string());
+        }
+
+        Ok(api_response)
     }
 }

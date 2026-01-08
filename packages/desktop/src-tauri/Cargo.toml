@@ -39,6 +39,11 @@ url = "2"
 hex = "0.4"
 urlencoding = "2"
 
+# Blowfish decryption for Deezer downloads
+blowfish = "0.9"
+cipher = "0.4"
+md-5 = "0.10"
+
 # macOS native window APIs
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"

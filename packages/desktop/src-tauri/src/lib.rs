@@ -26,7 +26,12 @@ use uuid::Uuid;
 
 // Import API types (manually maintained to match OpenAPI spec)
 mod api_types;
-use api_types::{HasodApiClient, SpotifyTrackMetadata};
+use api_types::{HasodApiClient, SpotifyTrackMetadata, DeezerQuality};
+
+// Blowfish decryption imports
+use blowfish::Blowfish;
+use cipher::{BlockDecrypt, KeyInit};
+use md5::{Digest as Md5Digest, Md5};
 
 
 // ============================================================================
@@ -1015,6 +1020,122 @@ async fn get_spotify_metadata_from_api(url: &str) -> Result<SpotifyTrackMetadata
     Ok(metadata)
 }
 
+// ============================================================================
+// Deezer Download & Decryption Functions
+// ============================================================================
+
+/// Decrypt Deezer encrypted MP3/FLAC file using Blowfish BF-CBC
+/// Deezer uses a custom encryption scheme where only certain chunks are encrypted
+fn decrypt_deezer_file(encrypted_data: &[u8], decryption_key_hex: &str) -> Result<Vec<u8>, String> {
+    // Parse hex key to bytes
+    let key_bytes = hex::decode(decryption_key_hex)
+        .map_err(|e| format!("Invalid decryption key hex: {}", e))?;
+
+    if key_bytes.len() != 16 {
+        return Err(format!("Invalid key length: {} bytes (expected 16)", key_bytes.len()));
+    }
+
+    // Initialize Blowfish cipher with explicit type annotation
+    let cipher: Blowfish = Blowfish::new_from_slice(&key_bytes)
+        .map_err(|e| format!("Failed to initialize Blowfish: {}", e))?;
+
+    let mut decrypted_data = encrypted_data.to_vec();
+
+    // Deezer encryption scheme: only every third 2048-byte chunk is encrypted
+    const CHUNK_SIZE: usize = 2048;
+    let chunks_count = encrypted_data.len() / CHUNK_SIZE;
+
+    for chunk_idx in 0..chunks_count {
+        // Only decrypt every third chunk (chunks 0, 3, 6, 9, ...)
+        if chunk_idx % 3 == 0 {
+            let chunk_start = chunk_idx * CHUNK_SIZE;
+            let chunk_end = chunk_start + CHUNK_SIZE;
+
+            // Decrypt in 8-byte blocks (Blowfish block size)
+            for block_offset in (0..CHUNK_SIZE).step_by(8) {
+                let block_start = chunk_start + block_offset;
+                let block_end = block_start + 8;
+
+                if block_end <= decrypted_data.len() {
+                    // Get block as array
+                    let mut block: [u8; 8] = decrypted_data[block_start..block_end]
+                        .try_into()
+                        .unwrap();
+
+                    // Decrypt block in-place using generic array
+                    let block_ref = cipher::generic_array::GenericArray::from_mut_slice(&mut block);
+                    cipher.decrypt_block(block_ref);
+
+                    // Write decrypted block back
+                    decrypted_data[block_start..block_end].copy_from_slice(&block);
+                }
+            }
+        }
+    }
+
+    Ok(decrypted_data)
+}
+
+/// Download and decrypt track from Deezer using ISRC
+/// Returns the path to the decrypted MP3 file
+async fn download_and_decrypt_from_deezer(
+    isrc: &str,
+    auth_token: &str,
+    output_path: &str,
+) -> Result<String, String> {
+    println!("[Deezer] Attempting download for ISRC: {}", isrc);
+
+    // Step 1: Get download URL and decryption key from backend
+    let api_client = HasodApiClient::production();
+
+    let deezer_response = api_client
+        .get_deezer_download_url(isrc, auth_token, Some(DeezerQuality::Mp3320))
+        .await?;
+
+    println!("[Deezer] ✅ Got download URL (quality: {:?})", deezer_response.quality);
+    println!("[Deezer] Decryption key: {}", deezer_response.decryption_key);
+
+    // Step 2: Download encrypted file
+    println!("[Deezer] Downloading encrypted file...");
+
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(300)) // 5 minute timeout
+        .build()
+        .map_err(|e| format!("Failed to create HTTP client: {}", e))?;
+
+    let response = client
+        .get(&deezer_response.download_url)
+        .send()
+        .await
+        .map_err(|e| format!("Failed to download from Deezer: {}", e))?;
+
+    if !response.status().is_success() {
+        return Err(format!("Deezer download failed with status: {}", response.status()));
+    }
+
+    let encrypted_bytes = response
+        .bytes()
+        .await
+        .map_err(|e| format!("Failed to read download bytes: {}", e))?;
+
+    println!("[Deezer] Downloaded {} bytes", encrypted_bytes.len());
+
+    // Step 3: Decrypt the file
+    println!("[Deezer] Decrypting file...");
+
+    let decrypted_bytes = decrypt_deezer_file(&encrypted_bytes, &deezer_response.decryption_key)?;
+
+    println!("[Deezer] ✅ Decrypted successfully");
+
+    // Step 4: Write decrypted file
+    std::fs::write(output_path, decrypted_bytes)
+        .map_err(|e| format!("Failed to write decrypted file: {}", e))?;
+
+    println!("[Deezer] ✅ Saved to: {}", output_path);
+
+    Ok(output_path.to_string())
+}
+
 /// Get full track metadata from Spotify Web API
 async fn get_spotify_track_from_api(track_id: &str) -> Result<SpotifyTrackInfo, String> {
     let token = get_spotify_access_token().await?;
@@ -1899,6 +2020,59 @@ async fn process_download_job(app: &AppHandle, job_id: String, base_output_dir: 
             }
         }
 
+        // Step 2: Try Deezer download first using ISRC
+        println!("[Spotify] Attempting Deezer download using ISRC: {}", spotify_metadata.isrc);
+        update_job_status(&job_id, DownloadStatus::Downloading, 10.0, "Trying Deezer...");
+        #[cfg(target_os = "macos")]
+        update_floating_panel_status("downloading", 10.0, "Trying Deezer...", get_queued_count());
+
+        // Get auth token for API
+        let auth_token: String = get_stored_auth()
+            .map(|auth| auth.id_token)
+            .unwrap_or_default();
+
+        if !auth_token.is_empty() {
+            // Prepare output path for decrypted file using TrackMetadata
+            let temp_metadata = TrackMetadata {
+                title: spotify_metadata.name.clone(),
+                artist: spotify_metadata.artist.clone(),
+                album: spotify_metadata.album.clone(),
+                duration: Some((spotify_metadata.duration_ms / 1000) as u32),
+                thumbnail: Some(spotify_metadata.image_url.clone()),
+            };
+            let output_path = get_organized_output_path(&base_output_dir, &temp_metadata);
+            let temp_deezer_path = output_path.to_string_lossy().to_string();
+
+            // Try Deezer download + decrypt
+            match download_and_decrypt_from_deezer(&spotify_metadata.isrc, &auth_token, &temp_deezer_path).await {
+                Ok(deezer_file_path) => {
+                    println!("[Spotify] ✅ Deezer download successful!");
+                    println!("[Spotify] File ready at: {}", deezer_file_path);
+
+                    // Mark as complete
+                    update_job_status(&job_id, DownloadStatus::Complete, 100.0, "Download complete");
+                    if let Ok(mut queue) = DOWNLOAD_QUEUE.lock() {
+                        if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
+                            job.output_path = Some(deezer_file_path.clone());
+                            job.completed_at = Some(chrono::Utc::now().timestamp());
+                        }
+                    }
+                    app.emit("queue-update", get_queue_status().ok()).ok();
+                    #[cfg(target_os = "macos")]
+                    update_floating_panel_status("complete", 100.0, "Complete", get_queued_count());
+
+                    return Ok(deezer_file_path);
+                }
+                Err(e) => {
+                    println!("[Spotify] ⚠️ Deezer download failed: {}", e);
+                    println!("[Spotify] Falling back to YouTube search...");
+                }
+            }
+        } else {
+            println!("[Spotify] No auth token, skipping Deezer, using YouTube fallback");
+        }
+
+        // Step 3: Fallback to YouTube if Deezer failed or not available
         println!("[Spotify] Searching YouTube for: {} - {} (Album: {})",
                  spotify_metadata.artist, spotify_metadata.name, spotify_metadata.album);
 
