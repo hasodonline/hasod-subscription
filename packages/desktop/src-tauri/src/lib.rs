@@ -2026,12 +2026,14 @@ async fn process_download_job(app: &AppHandle, job_id: String, base_output_dir: 
         #[cfg(target_os = "macos")]
         update_floating_panel_status("downloading", 10.0, "Trying Deezer...", get_queued_count());
 
-        // Get auth token for API
-        let auth_token: String = get_stored_auth()
+        // Get auth token for API - try to get from keychain even if close to expiring
+        // The API will validate it anyway, and we'll refresh if needed
+        let auth_token: String = get_auth_from_keychain()
             .map(|auth| auth.id_token)
             .unwrap_or_default();
 
         if !auth_token.is_empty() {
+            println!("[Spotify] Using auth token for Deezer API call");
             // Prepare output path for decrypted file using TrackMetadata
             let temp_metadata = TrackMetadata {
                 title: spotify_metadata.name.clone(),
