@@ -95,6 +95,9 @@ jobs:
       - name: Deploy Firestore Rules
         run: firebase deploy --only firestore:rules --project ${{ env.FIREBASE_PROJECT }} --non-interactive
 
+      - name: Deploy Firestore Indexes
+        run: firebase deploy --only firestore:indexes --project ${{ env.FIREBASE_PROJECT }} --non-interactive
+
       # ============================================
       # Post-Deployment Verification
       # ============================================
