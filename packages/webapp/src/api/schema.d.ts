@@ -347,6 +347,34 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/download/deezer/isrc": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Get Deezer download URL from ISRC
+         * @description Retrieves a direct download URL for a track from Deezer using its ISRC code.
+         *     Returns an encrypted MP3 download link that can be used to download the track.
+         *
+         *     **Quality Options:**
+         *     - `MP3_128` - 128 kbps MP3
+         *     - `MP3_320` - 320 kbps MP3 (default)
+         *     - `FLAC` - Lossless FLAC audio
+         *
+         *     **Authentication:** Requires active `hasod-downloader` subscription.
+         */
+        post: operations["getDeezerDownloadUrl"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -637,6 +665,36 @@ export interface components {
              * @example https://i.scdn.co/image/ab67616d0000b27312d961970aa13291d9720f8b
              */
             imageUrl?: string;
+        };
+        /**
+         * @description Audio quality for Deezer downloads
+         * @default MP3_320
+         * @enum {string}
+         */
+        DeezerQuality: "MP3_128" | "MP3_320" | "FLAC";
+        DeezerIsrcRequest: {
+            /**
+             * @description International Standard Recording Code
+             * @example IL1012501118
+             */
+            isrc: string;
+            quality?: components["schemas"]["DeezerQuality"];
+        };
+        DeezerDownloadUrlResponse: {
+            /** @constant */
+            success: true;
+            /**
+             * Format: uri
+             * @description Direct download URL for the encrypted MP3/FLAC file
+             * @example https://e-cdns-proxy-5.dzcdn.net/mobile/1/...
+             */
+            downloadUrl: string;
+            quality: components["schemas"]["DeezerQuality"];
+            /**
+             * @description Blowfish decryption key (hex-encoded, derived from track ID)
+             * @example a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6
+             */
+            decryptionKey: string;
         };
     };
     responses: {
@@ -1111,6 +1169,59 @@ export interface operations {
             };
             400: components["responses"]["BadRequest"];
             /** @description Failed to extract metadata */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    getDeezerDownloadUrl: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DeezerIsrcRequest"];
+            };
+        };
+        responses: {
+            /** @description Download URL retrieved successfully */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeezerDownloadUrlResponse"];
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            401: components["responses"]["Unauthorized"];
+            /** @description Subscription required */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Track not found on Deezer */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Failed to retrieve download URL */
             500: {
                 headers: {
                     [name: string]: unknown;

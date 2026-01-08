@@ -15,6 +15,7 @@ import * as SubscriptionService from './services/subscription.service';
 import * as TransactionService from './services/transaction.service';
 import * as FirestoreService from './services/firestore.service';
 import { spotifyMetadataService } from './services/spotify-metadata.service';
+import { deezerService, DeezerService } from './services/deezer.service';
 
 // Utilities
 import { getPayPalConfig, getAppConfig, getGoogleConfig, validatePayPalConfig } from './utils/config';
@@ -701,6 +702,112 @@ app.post('/metadata/spotify', async (req: Request, res: Response, next: NextFunc
     res.status(500).json({
       success: false,
       error: error.message || 'Failed to extract metadata'
+    });
+  }
+});
+
+// ============================================================================
+// Download Link Retrieval Endpoints
+// ============================================================================
+
+/**
+ * POST /download/deezer/isrc
+ * Get Deezer download URL from ISRC code
+ * Requires authentication and active hasod-downloader subscription
+ */
+app.post('/download/deezer/isrc', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const { isrc, quality } = req.body;
+
+    // Validate ISRC
+    if (!isrc || typeof isrc !== 'string') {
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required field: isrc'
+      });
+    }
+
+    if (!DeezerService.isValidIsrc(isrc)) {
+      return res.status(400).json({
+        success: false,
+        error: 'Invalid ISRC format. Expected format: 2 letters + 3 alphanumeric + 7 digits (e.g., IL1012501118)'
+      });
+    }
+
+    // Validate quality if provided
+    const validQualities = ['MP3_128', 'MP3_320', 'FLAC'];
+    if (quality && !validQualities.includes(quality)) {
+      return res.status(400).json({
+        success: false,
+        error: `Invalid quality. Must be one of: ${validQualities.join(', ')}`
+      });
+    }
+
+    // Verify authentication
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        success: false,
+        error: 'Authentication required. Provide Bearer token.'
+      });
+    }
+
+    let uid: string | null = null;
+
+    try {
+      const token = authHeader.substring(7);
+      const decodedToken = await admin.auth().verifyIdToken(token);
+      uid = decodedToken.uid;
+    } catch (authError) {
+      console.error('Token verification failed:', authError);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid or expired token'
+      });
+    }
+
+    if (!uid) {
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid token: missing user info'
+      });
+    }
+
+    // Check if user has active subscription to hasod-downloader
+    const user = await FirestoreService.getUser(uid);
+    const hasodDownloaderStatus = user.services?.['hasod-downloader']?.status;
+
+    if (hasodDownloaderStatus !== 'active') {
+      return res.status(403).json({
+        success: false,
+        error: 'Active subscription to Hasod Downloader required',
+        requiresSubscription: true
+      });
+    }
+
+    // Get download URL from Deezer
+    const result = await deezerService.getDownloadUrl(isrc, quality || 'MP3_320');
+
+    res.json({
+      success: true,
+      downloadUrl: result.downloadUrl,
+      quality: result.quality,
+      decryptionKey: result.decryptionKey
+    });
+  } catch (error: any) {
+    console.error('❌ Deezer download URL error:', error);
+
+    // Determine appropriate status code
+    let statusCode = 500;
+    if (error.message.includes('not found') || error.message.includes('Track not found')) {
+      statusCode = 404;
+    } else if (error.message.includes('ARL') || error.message.includes('authenticate')) {
+      statusCode = 500; // Server configuration issue
+    }
+
+    res.status(statusCode).json({
+      success: false,
+      error: error.message || 'Failed to get download URL'
     });
   }
 });

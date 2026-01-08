@@ -72,6 +72,7 @@ jobs:
           GOOGLE_SERVICE_ACCOUNT_KEY: '${{ secrets.GOOGLE_SERVICE_ACCOUNT_KEY }}'
           GOOGLE_ADMIN_EMAIL: "hasod@hasodonline.com"
           OPENAI_API_KEY: "${{ secrets.OPENAI_API_KEY }}"
+          DEEZER_ARL: "${{ secrets.DEEZER_ARL }}"
           EOF
 
       # ============================================

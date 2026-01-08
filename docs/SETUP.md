@@ -263,6 +263,40 @@ firebase deploy --only functions
 
 Update webhook URL in PayPal Dashboard (see Step 3.4)
 
+### 7.6 Configure GitHub Secrets (for CI/CD)
+
+If using GitHub Actions for automated deployment:
+
+1. Go to your GitHub repository
+2. Navigate to Settings → Secrets and variables → Actions
+3. Click "New repository secret" and add the following secrets:
+
+**Required Secrets:**
+- `FIREBASE_SERVICE_ACCOUNT` - Firebase service account JSON (for deployment)
+- `PAYPAL_CLIENT_ID` - Your PayPal Client ID
+- `PAYPAL_CLIENT_SECRET` - Your PayPal Client Secret
+- `GOOGLE_SERVICE_ACCOUNT_KEY` - Google service account JSON (single line)
+- `OPENAI_API_KEY` - OpenAI API key (for transliteration service)
+- `DEEZER_ARL` - Deezer ARL token (for download service)
+
+**How to get FIREBASE_SERVICE_ACCOUNT:**
+```bash
+# Create a service account for GitHub Actions
+firebase projects:list
+# Go to Firebase Console → Project Settings → Service Accounts
+# Click "Generate New Private Key"
+# Copy the entire JSON content and paste as GitHub secret
+```
+
+**How to get DEEZER_ARL:**
+1. Login to Deezer in your browser
+2. Open Developer Tools (F12)
+3. Go to Application → Cookies → deezer.com
+4. Find the `arl` cookie and copy its value
+5. Paste the value as the `DEEZER_ARL` secret
+
+The GitHub Actions workflow (`.github/workflows/deploy.yml`) will automatically use these secrets during deployment.
+
 ## Step 8: Configure Admin Access
 
 ### 8.1 Update Admin Emails

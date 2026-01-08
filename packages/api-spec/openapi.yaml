@@ -30,6 +30,8 @@ tags:
     description: Hebrew to English transliteration service
   - name: Metadata
     description: Music metadata extraction services
+  - name: Download Link Retrieval
+    description: Get download links for music tracks (requires hasod-downloader subscription)
 
 # Default: no security (public endpoints explicitly set security: [])
 security: []
@@ -448,6 +450,62 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '500':
           description: Failed to extract metadata
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
+  # ===========================================================================
+  # Download Link Retrieval
+  # ===========================================================================
+  /download/deezer/isrc:
+    post:
+      operationId: getDeezerDownloadUrl
+      summary: Get Deezer download URL from ISRC
+      description: |
+        Retrieves a direct download URL for a track from Deezer using its ISRC code.
+        Returns an encrypted MP3 download link that can be used to download the track.
+
+        **Quality Options:**
+        - `MP3_128` - 128 kbps MP3
+        - `MP3_320` - 320 kbps MP3 (default)
+        - `FLAC` - Lossless FLAC audio
+
+        **Authentication:** Requires active `hasod-downloader` subscription.
+      tags: [Download Link Retrieval]
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DeezerIsrcRequest'
+      responses:
+        '200':
+          description: Download URL retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeezerDownloadUrlResponse'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          description: Subscription required
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: Track not found on Deezer
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Failed to retrieve download URL
           content:
             application/json:
               schema:
@@ -1076,3 +1134,43 @@ components:
           type: string
           description: Album cover art URL
           example: "https://i.scdn.co/image/ab67616d0000b27312d961970aa13291d9720f8b"
+
+    # -------------------------------------------------------------------------
+    # Download Link Retrieval Schemas
+    # -------------------------------------------------------------------------
+    DeezerQuality:
+      type: string
+      enum: [MP3_128, MP3_320, FLAC]
+      default: MP3_320
+      description: Audio quality for Deezer downloads
+
+    DeezerIsrcRequest:
+      type: object
+      required: [isrc]
+      properties:
+        isrc:
+          type: string
+          description: International Standard Recording Code
+          example: "IL1012501118"
+          pattern: "^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$"
+        quality:
+          $ref: '#/components/schemas/DeezerQuality'
+
+    DeezerDownloadUrlResponse:
+      type: object
+      required: [success, downloadUrl, quality, decryptionKey]
+      properties:
+        success:
+          type: boolean
+          const: true
+        downloadUrl:
+          type: string
+          format: uri
+          description: Direct download URL for the encrypted MP3/FLAC file
+          example: "https://e-cdns-proxy-5.dzcdn.net/mobile/1/..."
+        quality:
+          $ref: '#/components/schemas/DeezerQuality'
+        decryptionKey:
+          type: string
+          description: Blowfish decryption key (hex-encoded, derived from track ID)
+          example: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"

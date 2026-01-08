@@ -29,6 +29,10 @@ export interface OpenAIConfig {
   api_key: string;
 }
 
+export interface DeezerConfig {
+  arl: string;
+}
+
 export interface StorageConfig {
   bucket: string;
 }
@@ -55,6 +59,7 @@ export interface Config {
   google: GoogleConfig;
   spotify?: SpotifyConfig;
   openai?: OpenAIConfig;
+  deezer?: DeezerConfig;
   storage?: StorageConfig;
   download?: DownloadConfig;
   proxy?: ProxyConfig;
@@ -120,6 +125,15 @@ export function getSpotifyConfig(): SpotifyConfig {
 export function getOpenAIConfig(): OpenAIConfig {
   return {
     api_key: process.env.OPENAI_API_KEY || ''
+  };
+}
+
+/**
+ * Retrieves Deezer API configuration
+ */
+export function getDeezerConfig(): DeezerConfig {
+  return {
+    arl: process.env.DEEZER_ARL || ''
   };
 }
 
@@ -214,6 +228,7 @@ export function getConfig(): Config {
     google: getGoogleConfig(),
     spotify: getSpotifyConfig(),
     openai: getOpenAIConfig(),
+    deezer: getDeezerConfig(),
     storage: getStorageConfig(),
     download: getDownloadConfig(),
     proxy: getProxyConfig()
