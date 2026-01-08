@@ -55,10 +55,12 @@ pub struct SpotifyTrackMetadata {
 
 /// Quality options for Deezer downloads
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum DeezerQuality {
+    #[serde(rename = "MP3_128")]
     Mp3128,
+    #[serde(rename = "MP3_320")]
     Mp3320,
+    #[serde(rename = "FLAC")]
     Flac,
 }
 
