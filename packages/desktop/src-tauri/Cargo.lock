@@ -1667,6 +1667,7 @@ version = "0.1.1"
 dependencies = [
  "base64 0.22.1",
  "blowfish",
+ "cbc",
  "chrono",
  "cipher",
  "cocoa",
