@@ -297,4 +297,157 @@ impl YouTubeDownloader {
 
         Ok((playlist_name, video_urls))
     }
+
+    /// Download a YouTube video/track directly
+    /// Returns the path to the downloaded file
+    pub async fn download_track(
+        app: &tauri::AppHandle,
+        url: &str,
+        base_output_dir: &str,
+        download_context: &crate::download::DownloadContext,
+        job_id: &str,
+        update_status_fn: impl Fn(&str, crate::download::DownloadStatus, f32, &str),
+        emit_queue_fn: impl Fn(),
+        update_metadata_fn: impl Fn(crate::download::TrackMetadata),
+    ) -> Result<String, String> {
+        use crate::download::{DownloadStatus, TrackMetadata};
+        use tauri_plugin_shell::ShellExt;
+
+        // Step 1: Get metadata
+        update_status_fn(job_id, DownloadStatus::Downloading, 8.0, "Fetching metadata...");
+        emit_queue_fn();
+
+        let sidecar = app.shell().sidecar("yt-dlp")
+            .map_err(|e| format!("Failed to get yt-dlp sidecar: {}", e))?;
+
+        let (mut rx, _child) = sidecar
+            .args(["--dump-json", "--no-download", url])
+            .spawn()
+            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+        let mut json_output = String::new();
+        while let Some(event) = rx.recv().await {
+            match event {
+                tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                    json_output.push_str(&String::from_utf8_lossy(&line));
+                }
+                tauri_plugin_shell::process::CommandEvent::Terminated(_) => break,
+                _ => {}
+            }
+        }
+
+        let mut metadata = Self::parse_ytdlp_metadata(&json_output);
+
+        // For Spotify-style titles (Artist - Title), extract artist
+        if metadata.artist == "Unknown Artist" {
+            if let Some(dash_pos) = metadata.title.find(" - ") {
+                let artist = metadata.title[..dash_pos].trim().to_string();
+                let title = metadata.title[dash_pos + 3..].trim().to_string();
+                if !artist.is_empty() {
+                    metadata.artist = artist;
+                    metadata.title = title;
+                }
+            }
+        }
+
+        // Step 2: Update job metadata
+        update_metadata_fn(metadata.clone());
+        emit_queue_fn();
+
+        println!(
+            "[YouTube] Title: '{}', Artist: '{}', Album: '{}'",
+            metadata.title, metadata.artist, metadata.album
+        );
+
+        // Step 3: Calculate output path
+        let output_path = crate::utils::filesystem::get_organized_output_path(
+            base_output_dir,
+            &metadata,
+            download_context,
+        );
+        let output_dir = output_path.parent().unwrap().to_string_lossy().to_string();
+
+        std::fs::create_dir_all(&output_dir)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+        let output_template = format!("{}/%(title)s.%(ext)s", output_dir);
+
+        // Step 4: Build yt-dlp command
+        let sidecar = app.shell().sidecar("yt-dlp")
+            .map_err(|e| format!("Failed to get yt-dlp sidecar: {}", e))?;
+
+        let args: Vec<&str> = vec![
+            url,
+            "-f", "bestaudio",
+            "--extract-audio",
+            "--audio-format", "mp3",
+            "--audio-quality", "0",
+            "--prefer-free-formats",
+            "--embed-thumbnail",
+            "--add-metadata",
+            "--output", &output_template,
+            "--progress",
+            "--newline",
+            "--no-warnings",
+        ];
+
+        let (mut rx, _child) = sidecar.args(args).spawn()
+            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+        update_status_fn(job_id, DownloadStatus::Downloading, 5.0, "Downloading...");
+
+        // Step 5: Listen to progress
+        let mut last_progress: f32 = 5.0;
+        let track_title = metadata.title.clone();
+
+        while let Some(event) = rx.recv().await {
+            match event {
+                tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                    let line_str = String::from_utf8_lossy(&line).to_string();
+                    println!("[yt-dlp] {}", line_str);
+
+                    if let Some(pct) = Self::parse_ytdlp_progress(&line_str) {
+                        last_progress = pct * 0.9;
+                        update_status_fn(
+                            job_id,
+                            DownloadStatus::Downloading,
+                            last_progress,
+                            &format!("Downloading... {:.1}%", pct),
+                        );
+                    }
+
+                    if line_str.contains("[ExtractAudio]") || line_str.contains("[Merger]") {
+                        update_status_fn(job_id, DownloadStatus::Converting, 92.0, "Converting to MP3...");
+                    }
+                }
+                tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
+                    let line_str = String::from_utf8_lossy(&line).to_string();
+                    eprintln!("[yt-dlp stderr] {}", line_str);
+                }
+                tauri_plugin_shell::process::CommandEvent::Error(error) => {
+                    update_status_fn(
+                        job_id,
+                        DownloadStatus::Error,
+                        last_progress,
+                        &format!("Error: {}", error),
+                    );
+                    return Err(format!("yt-dlp error: {}", error));
+                }
+                tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
+                    if payload.code != Some(0) {
+                        let error_msg = format!("yt-dlp exited with code: {:?}", payload.code);
+                        update_status_fn(job_id, DownloadStatus::Error, last_progress, &error_msg);
+                        return Err(error_msg);
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        update_status_fn(job_id, DownloadStatus::Complete, 100.0, "Download complete!");
+        emit_queue_fn();
+
+        Ok(output_path.to_string_lossy().to_string())
+    }
 }

@@ -34,5 +34,56 @@ pub fn create_download_dir() -> Result<String, String> {
     Ok(download_dir)
 }
 
-// Note: get_organized_output_path() will be moved here later when we extract download models
-// It depends on TrackMetadata and DownloadContext which are currently in lib.rs
+/// Calculate organized output path based on metadata and context
+pub fn get_organized_output_path(
+    base_dir: &str,
+    metadata: &crate::download::TrackMetadata,
+    context: &crate::download::DownloadContext,
+) -> PathBuf {
+    let artist = sanitize_filename(&metadata.artist);
+    let title = sanitize_filename(&metadata.title);
+
+    // Filename is always: "artist - song.mp3"
+    let filename = if artist.is_empty() || artist == "Unknown Artist" {
+        format!("{}.mp3", title)
+    } else {
+        format!("{} - {}.mp3", artist, title)
+    };
+
+    // Determine folder structure based on context
+    let path = match context {
+        crate::download::DownloadContext::Single => {
+            // Single track: /unsorted/
+            PathBuf::from(base_dir).join("unsorted")
+        }
+        crate::download::DownloadContext::Album(album_name) => {
+            // Album: /artist/album name/
+            let album = sanitize_filename(album_name);
+            PathBuf::from(base_dir)
+                .join(if artist.is_empty() || artist == "Unknown Artist" {
+                    "Unknown Artist"
+                } else {
+                    &artist
+                })
+                .join(if album.is_empty() {
+                    "Unknown Album"
+                } else {
+                    &album
+                })
+        }
+        crate::download::DownloadContext::Playlist(playlist_name) => {
+            // Playlist: /playlist_name/
+            let playlist = sanitize_filename(playlist_name);
+            PathBuf::from(base_dir).join(if playlist.is_empty() {
+                "Unknown Playlist"
+            } else {
+                &playlist
+            })
+        }
+    };
+
+    // Ensure directory exists
+    fs::create_dir_all(&path).ok();
+
+    path.join(filename)
+}

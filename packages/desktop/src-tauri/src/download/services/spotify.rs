@@ -321,4 +321,196 @@ impl SpotifyDownloader {
             duration_ms: None,
         })))
     }
+
+    /// Download a Spotify track (tries Deezer first, falls back to YouTube)
+    /// Returns the path to the downloaded file
+    pub async fn download_track(
+        app: &tauri::AppHandle,
+        url: &str,
+        base_output_dir: &str,
+        download_context: &crate::download::DownloadContext,
+        job_id: &str,
+        update_status_fn: impl Fn(&str, crate::download::DownloadStatus, f32, &str),
+        emit_queue_fn: impl Fn(),
+        update_metadata_fn: impl Fn(crate::download::TrackMetadata),
+    ) -> Result<String, String> {
+        use crate::auth::get_auth_from_keychain;
+        use crate::download::services::{DeezerDownloader, YouTubeDownloader};
+        use crate::download::{DownloadStatus, TrackMetadata};
+        use tauri_plugin_shell::ShellExt;
+
+        println!("[Spotify] Using backend API for metadata extraction");
+
+        update_status_fn(job_id, DownloadStatus::Downloading, 5.0, "Getting track info...");
+        emit_queue_fn();
+
+        // Step 1: Get metadata from backend API
+        let spotify_metadata = Self::get_metadata_from_api(url).await?;
+
+        // Step 2: Update job metadata
+        let track_metadata = TrackMetadata {
+            title: spotify_metadata.name.clone(),
+            artist: spotify_metadata.artist.clone(),
+            album: spotify_metadata.album.clone(),
+            duration: Some((spotify_metadata.duration_ms / 1000) as u32),
+            thumbnail: Some(spotify_metadata.image_url.clone()),
+        };
+        update_metadata_fn(track_metadata.clone());
+
+        // Step 3: Calculate output path
+        let output_path = crate::utils::filesystem::get_organized_output_path(
+            base_output_dir,
+            &track_metadata,
+            download_context,
+        );
+        let output_path_str = output_path.to_string_lossy().to_string();
+
+        // Step 4: Try Deezer download first
+        println!("[Spotify] Attempting Deezer download using ISRC: {}", spotify_metadata.isrc);
+        update_status_fn(job_id, DownloadStatus::Downloading, 10.0, "Trying Deezer...");
+        emit_queue_fn();
+
+        let auth_token = get_auth_from_keychain()
+            .map(|auth| auth.id_token)
+            .unwrap_or_default();
+
+        if !auth_token.is_empty() {
+            println!("[Spotify] Using auth token for Deezer API call");
+
+            match DeezerDownloader::download_and_decrypt(
+                app,
+                &spotify_metadata.isrc,
+                &auth_token,
+                &output_path_str,
+                Some(&spotify_metadata.image_url),
+            )
+            .await
+            {
+                Ok(deezer_file_path) => {
+                    println!("[Spotify] ✅ Deezer download successful!");
+                    println!("[Spotify] File ready at: {}", deezer_file_path);
+
+                    update_status_fn(job_id, DownloadStatus::Complete, 100.0, "Download complete");
+                    emit_queue_fn();
+
+                    return Ok(deezer_file_path);
+                }
+                Err(e) => {
+                    println!("[Spotify] ⚠️ Deezer download failed: {}", e);
+                    println!("[Spotify] Falling back to YouTube search...");
+                }
+            }
+        } else {
+            println!("[Spotify] No auth token, skipping Deezer, using YouTube fallback");
+        }
+
+        // Step 5: Fallback to YouTube
+        println!(
+            "[Spotify] Searching YouTube for: {} - {} (Album: {})",
+            spotify_metadata.artist, spotify_metadata.name, spotify_metadata.album
+        );
+
+        update_status_fn(
+            job_id,
+            DownloadStatus::Downloading,
+            15.0,
+            &format!("Searching: {}", spotify_metadata.name),
+        );
+        emit_queue_fn();
+
+        let youtube_url = YouTubeDownloader::find_best_source(
+            app,
+            &spotify_metadata.artist,
+            &spotify_metadata.name,
+            job_id,
+            &update_status_fn,
+            &emit_queue_fn,
+        )
+        .await?;
+
+        println!("[Spotify] Found YouTube match: {}", youtube_url);
+
+        // Step 6: Download from YouTube using yt-dlp
+        let output_dir = output_path.parent().unwrap().to_string_lossy().to_string();
+        std::fs::create_dir_all(&output_dir)
+            .map_err(|e| format!("Failed to create directory: {}", e))?;
+
+        let output_template = format!("{}/%(title)s.%(ext)s", output_dir);
+
+        let sidecar = app.shell().sidecar("yt-dlp")
+            .map_err(|e| format!("Failed to get yt-dlp sidecar: {}", e))?;
+
+        let args: Vec<&str> = vec![
+            &youtube_url,
+            "-f", "bestaudio",
+            "--extract-audio",
+            "--audio-format", "mp3",
+            "--audio-quality", "0",
+            "--prefer-free-formats",
+            "--embed-thumbnail",
+            "--add-metadata",
+            "--output", &output_template,
+            "--progress",
+            "--newline",
+            "--no-warnings",
+        ];
+
+        let (mut rx, _child) = sidecar.args(args).spawn()
+            .map_err(|e| format!("Failed to spawn yt-dlp: {}", e))?;
+
+        update_status_fn(job_id, DownloadStatus::Downloading, 20.0, "Downloading...");
+
+        let mut last_progress: f32 = 20.0;
+        let track_title = track_metadata.title.clone();
+
+        while let Some(event) = rx.recv().await {
+            match event {
+                tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
+                    let line_str = String::from_utf8_lossy(&line).to_string();
+                    println!("[yt-dlp] {}", line_str);
+
+                    if let Some(pct) = YouTubeDownloader::parse_ytdlp_progress(&line_str) {
+                        last_progress = 20.0 + (pct * 0.7); // 20-90%
+                        update_status_fn(
+                            job_id,
+                            DownloadStatus::Downloading,
+                            last_progress,
+                            &format!("Downloading... {:.1}%", pct),
+                        );
+                    }
+
+                    if line_str.contains("[ExtractAudio]") || line_str.contains("[Merger]") {
+                        update_status_fn(job_id, DownloadStatus::Converting, 92.0, "Converting to MP3...");
+                    }
+                }
+                tauri_plugin_shell::process::CommandEvent::Stderr(line) => {
+                    let line_str = String::from_utf8_lossy(&line).to_string();
+                    eprintln!("[yt-dlp stderr] {}", line_str);
+                }
+                tauri_plugin_shell::process::CommandEvent::Error(error) => {
+                    update_status_fn(
+                        job_id,
+                        DownloadStatus::Error,
+                        last_progress,
+                        &format!("Error: {}", error),
+                    );
+                    return Err(format!("yt-dlp error: {}", error));
+                }
+                tauri_plugin_shell::process::CommandEvent::Terminated(payload) => {
+                    if payload.code != Some(0) {
+                        let error_msg = format!("yt-dlp exited with code: {:?}", payload.code);
+                        update_status_fn(job_id, DownloadStatus::Error, last_progress, &error_msg);
+                        return Err(error_msg);
+                    }
+                    break;
+                }
+                _ => {}
+            }
+        }
+
+        update_status_fn(job_id, DownloadStatus::Complete, 100.0, "Download complete!");
+        emit_queue_fn();
+
+        Ok(output_path_str)
+    }
 }
