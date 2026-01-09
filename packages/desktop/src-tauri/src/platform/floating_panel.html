@@ -341,19 +341,31 @@
         document.addEventListener('mouseup', () => { isDragging = false; });
 
         // URL drop handling
+        let dragCounter = 0; // Track drag enter/leave to prevent flicker
+
         document.addEventListener('dragenter', (e) => {
             e.preventDefault();
             e.stopPropagation();
-            if (!isDragging) setState('drag-over');
+            dragCounter++;
+            if (dragCounter === 1 && currentState !== 'drag-over') {
+                setState('drag-over');
+            }
         });
 
         document.addEventListener('dragover', (e) => {
             e.preventDefault();
             e.stopPropagation();
+            // Ensure drag-over state is maintained
+            if (currentState !== 'drag-over') {
+                setState('drag-over');
+            }
         });
 
         document.addEventListener('dragleave', (e) => {
-            if (e.relatedTarget === null && currentState === 'drag-over') {
+            e.preventDefault();
+            e.stopPropagation();
+            dragCounter--;
+            if (dragCounter === 0 && currentState === 'drag-over') {
                 setState(queueCount > 0 ? 'queued' : 'idle');
             }
         });
@@ -361,6 +373,9 @@
         document.addEventListener('drop', (e) => {
             e.preventDefault();
             e.stopPropagation();
+
+            // Reset drag counter on drop
+            dragCounter = 0;
 
             let url = '';
             if (e.dataTransfer.types.includes('text/uri-list')) {
@@ -383,6 +398,7 @@
                 }
             } else {
                 setState('error');
+                setTimeout(() => setState(queueCount > 0 ? 'queued' : 'idle'), 2000);
             }
         });
 
