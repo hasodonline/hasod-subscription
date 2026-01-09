@@ -1,0 +1,399 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body {
+            width: 100%; height: 100%;
+            background: transparent;
+            overflow: hidden;
+            -webkit-user-select: none;
+            user-select: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .container {
+            position: relative;
+            width: 135px;
+            height: 135px;
+        }
+
+        /* Rotating gradient ring */
+        .ring {
+            position: absolute;
+            width: 135px;
+            height: 135px;
+            border-radius: 50%;
+            background: conic-gradient(
+                from 0deg,
+                #667eea, #764ba2, #f093fb, #f5576c,
+                #4facfe, #00f2fe, #43e97b, #667eea
+            );
+            animation: rotate 8s linear infinite;
+            opacity: 0.9;
+        }
+
+        .ring::before {
+            content: '';
+            position: absolute;
+            inset: 6px;
+            border-radius: 50%;
+            background: rgba(20, 20, 35, 0.95);
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* Inner content circle */
+        .drop-zone {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 115px;
+            height: 115px;
+            border-radius: 50%;
+            background: radial-gradient(circle at 30% 30%, rgba(60,60,80,0.9), rgba(20,20,35,0.95));
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+            cursor: grab;
+            transition: all 0.3s ease;
+            z-index: 10;
+        }
+
+        .drop-zone:active { cursor: grabbing; }
+
+        .status-icon {
+            font-size: 28px;
+            margin-bottom: 4px;
+            transition: transform 0.3s ease;
+        }
+
+        .status-text {
+            font-size: 11px;
+            font-weight: 600;
+            text-align: center;
+            line-height: 1.3;
+            opacity: 0.9;
+        }
+
+        .queue-badge {
+            position: absolute;
+            top: -2px;
+            right: -2px;
+            min-width: 24px;
+            height: 24px;
+            background: linear-gradient(135deg, #f5576c, #f093fb);
+            border-radius: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: 700;
+            color: white;
+            box-shadow: 0 2px 8px rgba(245,87,108,0.5);
+            opacity: 0;
+            transform: scale(0);
+            transition: all 0.3s cubic-bezier(0.68, -0.55, 0.265, 1.55);
+            z-index: 20;
+        }
+
+        .queue-badge.visible {
+            opacity: 1;
+            transform: scale(1);
+        }
+
+        /* State: Idle */
+        .container.idle .ring {
+            animation-duration: 8s;
+            opacity: 0.7;
+        }
+
+        /* State: Drag Over */
+        .container.drag-over .ring {
+            animation-duration: 1s;
+            opacity: 1;
+            background: conic-gradient(
+                from 0deg,
+                #43e97b, #38f9d7, #43e97b, #38f9d7,
+                #43e97b, #38f9d7, #43e97b, #38f9d7
+            );
+        }
+        .container.drag-over .drop-zone {
+            transform: translate(-50%, -50%) scale(1.05);
+            background: radial-gradient(circle at 30% 30%, rgba(67,233,123,0.3), rgba(20,20,35,0.95));
+        }
+
+        /* State: Downloading */
+        .container.downloading .ring {
+            animation-duration: 2s;
+            opacity: 1;
+            background: conic-gradient(
+                from 0deg,
+                #4facfe, #00f2fe, #4facfe, #00f2fe,
+                #4facfe, #00f2fe, #4facfe, #00f2fe
+            );
+        }
+        .container.downloading .status-icon {
+            animation: pulse 1s ease-in-out infinite;
+        }
+
+        /* State: Complete */
+        .container.complete .ring {
+            animation-duration: 4s;
+            background: conic-gradient(
+                from 0deg,
+                #43e97b, #38f9d7, #43e97b, #38f9d7,
+                #43e97b, #38f9d7, #43e97b, #38f9d7
+            );
+        }
+
+        /* State: Error */
+        .container.error .ring {
+            animation-duration: 0.5s;
+            background: conic-gradient(
+                from 0deg,
+                #f5576c, #f093fb, #f5576c, #f093fb,
+                #f5576c, #f093fb, #f5576c, #f093fb
+            );
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.2); }
+        }
+
+        /* Progress ring */
+        .progress-ring {
+            position: absolute;
+            width: 135px;
+            height: 135px;
+            transform: rotate(-90deg);
+            z-index: 5;
+        }
+
+        .progress-ring circle {
+            fill: none;
+            stroke-width: 4;
+            stroke-linecap: round;
+        }
+
+        .progress-ring .bg {
+            stroke: rgba(255,255,255,0.1);
+        }
+
+        .progress-ring .progress {
+            stroke: url(#progressGradient);
+            stroke-dasharray: 408;
+            stroke-dashoffset: 408;
+            transition: stroke-dashoffset 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="container idle" id="container">
+        <div class="ring"></div>
+        <svg class="progress-ring" viewBox="0 0 135 135">
+            <defs>
+                <linearGradient id="progressGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" style="stop-color:#4facfe"/>
+                    <stop offset="100%" style="stop-color:#00f2fe"/>
+                </linearGradient>
+            </defs>
+            <circle class="bg" cx="67.5" cy="67.5" r="65"/>
+            <circle class="progress" id="progressCircle" cx="67.5" cy="67.5" r="65"/>
+        </svg>
+        <div class="drop-zone" id="dropZone">
+            <div class="status-icon" id="statusIcon">🎵</div>
+            <div class="status-text" id="statusText">Drop URL<br>Here</div>
+        </div>
+        <div class="queue-badge" id="queueBadge">0</div>
+    </div>
+
+    <script>
+        const container = document.getElementById('container');
+        const dropZone = document.getElementById('dropZone');
+        const statusIcon = document.getElementById('statusIcon');
+        const statusText = document.getElementById('statusText');
+        const queueBadge = document.getElementById('queueBadge');
+        const progressCircle = document.getElementById('progressCircle');
+
+        let isDragging = false;
+        let lastX = 0, lastY = 0;
+        let currentState = 'idle';
+        let queueCount = 0;
+        let currentProgress = 0;
+
+        // State management
+        function setState(state, data = {}) {
+            container.className = 'container ' + state;
+            currentState = state;
+
+            switch(state) {
+                case 'idle':
+                    statusIcon.textContent = '🎵';
+                    statusText.innerHTML = 'Drop URL<br>Here';
+                    setProgress(0);
+                    break;
+                case 'drag-over':
+                    statusIcon.textContent = '📥';
+                    statusText.innerHTML = 'Drop to<br>Download';
+                    break;
+                case 'processing':
+                    statusIcon.textContent = '⏳';
+                    const procTitle = data.title || 'Processing...';
+                    statusText.innerHTML = truncate(procTitle, 14) + '<br>Please wait...';
+                    setProgress(0);
+                    break;
+                case 'fetching':
+                    statusIcon.textContent = '🔍';
+                    const fetchTitle = data.title || 'Fetching...';
+                    statusText.innerHTML = truncate(fetchTitle, 12) + '<br>Loading...';
+                    setProgress(data.progress || 2);
+                    break;
+                case 'searching':
+                    statusIcon.textContent = '🎯';
+                    const searchTitle = data.title || 'Searching...';
+                    statusText.innerHTML = truncate(searchTitle, 12) + '<br>Finding...';
+                    setProgress(data.progress || 5);
+                    break;
+                case 'downloading':
+                    statusIcon.textContent = '⬇️';
+                    const progress = data.progress || 0;
+                    const title = data.title || 'Downloading...';
+                    statusText.innerHTML = truncate(title, 12) + '<br>' + Math.round(progress) + '%';
+                    setProgress(progress);
+                    break;
+                case 'converting':
+                    statusIcon.textContent = '🔄';
+                    statusText.innerHTML = 'Converting<br>to MP3...';
+                    setProgress(95);
+                    break;
+                case 'complete':
+                    statusIcon.textContent = '✅';
+                    statusText.innerHTML = 'Done!';
+                    setProgress(100);
+                    setTimeout(() => {
+                        if (queueCount === 0) setState('idle');
+                    }, 2000);
+                    break;
+                case 'error':
+                    statusIcon.textContent = '❌';
+                    statusText.innerHTML = 'Error';
+                    setTimeout(() => setState('idle'), 3000);
+                    break;
+                case 'queued':
+                    statusIcon.textContent = '📋';
+                    statusText.innerHTML = queueCount + ' in<br>Queue';
+                    break;
+            }
+        }
+
+        function setProgress(percent) {
+            const circumference = 2 * Math.PI * 65;
+            const offset = circumference - (percent / 100) * circumference;
+            progressCircle.style.strokeDashoffset = offset;
+            currentProgress = percent;
+        }
+
+        function updateQueueBadge(count) {
+            queueCount = count;
+            queueBadge.textContent = count;
+            queueBadge.classList.toggle('visible', count > 0);
+        }
+
+        function truncate(str, len) {
+            if (str.length <= len) return str;
+            return str.substring(0, len) + '...';
+        }
+
+        // Window dragging
+        dropZone.addEventListener('mousedown', (e) => {
+            if (e.button === 0) {
+                isDragging = true;
+                lastX = e.screenX;
+                lastY = e.screenY;
+                e.preventDefault();
+            }
+        });
+
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const dx = e.screenX - lastX;
+                const dy = e.screenY - lastY;
+                lastX = e.screenX;
+                lastY = e.screenY;
+                if (window.webkit?.messageHandlers?.moveWindow) {
+                    window.webkit.messageHandlers.moveWindow.postMessage({dx, dy});
+                }
+            }
+        });
+
+        document.addEventListener('mouseup', () => { isDragging = false; });
+
+        // URL drop handling
+        document.addEventListener('dragenter', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (!isDragging) setState('drag-over');
+        });
+
+        document.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+
+        document.addEventListener('dragleave', (e) => {
+            if (e.relatedTarget === null && currentState === 'drag-over') {
+                setState(queueCount > 0 ? 'queued' : 'idle');
+            }
+        });
+
+        document.addEventListener('drop', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+
+            let url = '';
+            if (e.dataTransfer.types.includes('text/uri-list')) {
+                url = e.dataTransfer.getData('text/uri-list');
+            } else if (e.dataTransfer.types.includes('text/plain')) {
+                url = e.dataTransfer.getData('text/plain');
+            }
+
+            if (url) {
+                url = url.split('\n').filter(line => !line.startsWith('#'))[0] || url;
+                url = url.trim();
+            }
+
+            if (url && (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('spotify:'))) {
+                statusIcon.textContent = '✨';
+                statusText.innerHTML = 'Added!';
+                // Don't reset - let the Rust backend control the status from here
+                if (window.webkit?.messageHandlers?.urlDropped) {
+                    window.webkit.messageHandlers.urlDropped.postMessage(url);
+                }
+            } else {
+                setState('error');
+            }
+        });
+
+        // Expose update function for native code
+        window.updateStatus = function(data) {
+            if (data.queueCount !== undefined) {
+                updateQueueBadge(data.queueCount);
+            }
+            if (data.state) {
+                setState(data.state, data);
+            }
+        };
+    </script>
+</body>
