@@ -2,13 +2,30 @@
 // Floating panel implementation using NSPanel and WKWebView
 
 use std::sync::Mutex;
+
+#[cfg(target_os = "macos")]
 use tauri::{AppHandle, Emitter, Manager};
+
+#[cfg(target_os = "macos")]
 use cocoa::base::{id, nil, YES, NO};
+#[cfg(target_os = "macos")]
 use cocoa::foundation::{NSRect, NSPoint, NSSize, NSString};
+#[cfg(target_os = "macos")]
 use objc::{class, msg_send, sel, sel_impl};
+#[cfg(target_os = "macos")]
 use objc::runtime::Object;
+#[cfg(target_os = "macos")]
 use objc::declare::ClassDecl;
+#[cfg(target_os = "macos")]
 use objc::runtime::{Class, Sel};
+
+// ============================================================================
+// FloatingPanel (macOS only)
+// ============================================================================
+
+#[cfg(target_os = "macos")]
+mod floating_panel {
+use super::*;
 
 // ============================================================================
 // Global State for Native Floating Panel
@@ -310,8 +327,13 @@ impl FloatingPanelManager {
     }
 }
 
+} // end floating_panel module
+
+#[cfg(target_os = "macos")]
+pub use floating_panel::FloatingPanelManager;
+
 // ============================================================================
-// Clipboard Utilities
+// Clipboard Utilities (Cross-platform)
 // ============================================================================
 
 pub struct ClipboardManager;
