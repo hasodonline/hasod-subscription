@@ -1,0 +1,11 @@
+SubscriptionStatusResponse:
+  type: object
+  required: [email, services]
+  properties:
+    email:
+      type: string
+      format: email
+    services:
+      type: object
+      additionalProperties:
+        $ref: './subscription.yaml#/UserServiceSubscription'

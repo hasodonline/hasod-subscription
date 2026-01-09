@@ -1,0 +1,60 @@
+/create-subscription:
+  post:
+    operationId: createSubscription
+    summary: Create a PayPal subscription
+    description: Initiates a PayPal subscription for a user and service
+    tags: [Subscriptions]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/subscription.yaml#/CreateSubscriptionRequest'
+    responses:
+      '200':
+        description: Subscription created, approval URL returned
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/subscription.yaml#/CreateSubscriptionResponse'
+      '400':
+        $ref: '../responses/errors.yaml#/BadRequest'
+
+/activate-subscription:
+  post:
+    operationId: activateSubscription
+    summary: Activate a subscription after PayPal approval
+    tags: [Subscriptions]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/subscription.yaml#/ActivateSubscriptionRequest'
+    responses:
+      '200':
+        description: Subscription activated
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/subscription.yaml#/ActivateSubscriptionResponse'
+      '400':
+        $ref: '../responses/errors.yaml#/BadRequest'
+
+/paypal-webhook:
+  post:
+    operationId: handlePaypalWebhook
+    summary: Handle PayPal webhook events
+    description: Processes PayPal subscription lifecycle events
+    tags: [Subscriptions]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/subscription.yaml#/PayPalWebhookEvent'
+    responses:
+      '200':
+        description: Webhook processed successfully
+      '500':
+        description: Webhook processing failed

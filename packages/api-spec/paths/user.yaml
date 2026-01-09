@@ -1,0 +1,27 @@
+/user/subscription-status:
+  get:
+    operationId: getSubscriptionStatus
+    summary: Get user subscription status
+    description: Returns user's subscription status for all services. Used by desktop app for license validation.
+    tags: [User]
+    security:
+      - bearerAuth: []
+      - {}
+    parameters:
+      - name: email
+        in: query
+        description: User email (fallback if no Bearer token)
+        schema:
+          type: string
+          format: email
+    responses:
+      '200':
+        description: User subscription status
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/user.yaml#/SubscriptionStatusResponse'
+      '401':
+        $ref: '../responses/errors.yaml#/Unauthorized'
+      '404':
+        $ref: '../responses/errors.yaml#/NotFound'

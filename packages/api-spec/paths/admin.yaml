@@ -1,0 +1,213 @@
+# ===========================================================================
+# Admin - Services
+# ===========================================================================
+/admin/services:
+  post:
+    operationId: createOrUpdateService
+    summary: Create or update a service
+    description: Admin only. Creates a new service or updates existing one.
+    tags: [Admin]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/service.yaml#/AdminServiceRequest'
+    responses:
+      '200':
+        description: Service created/updated
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/service.yaml#/AdminServiceResponse'
+      '403':
+        $ref: '../responses/errors.yaml#/Forbidden'
+
+/admin/services/{serviceId}:
+  delete:
+    operationId: deleteService
+    summary: Delete a service
+    description: Admin only. Permanently deletes a service.
+    tags: [Admin]
+    parameters:
+      - name: serviceId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Service identifier (e.g., 'music-library', 'hasod-downloader')
+    responses:
+      '200':
+        description: Service deleted
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/SuccessResponse'
+      '403':
+        $ref: '../responses/errors.yaml#/Forbidden'
+      '404':
+        $ref: '../responses/errors.yaml#/NotFound'
+
+# ===========================================================================
+# Admin - Manual Payments
+# ===========================================================================
+/admin/manual-payment:
+  post:
+    operationId: processManualPayment
+    summary: Process a manual payment
+    description: Admin only. Records a manual payment and activates subscription.
+    tags: [Admin]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/transaction.yaml#/ManualPaymentRequest'
+    responses:
+      '200':
+        description: Payment processed
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/transaction.yaml#/ManualPaymentResponse'
+      '400':
+        $ref: '../responses/errors.yaml#/BadRequest'
+      '403':
+        $ref: '../responses/errors.yaml#/Forbidden'
+
+/admin/manual-transactions:
+  get:
+    operationId: getAllTransactions
+    summary: Get all manual transactions
+    description: Admin only. Returns all manual transactions with optional filters.
+    tags: [Admin]
+    parameters:
+      - name: serviceId
+        in: query
+        schema:
+          type: string
+      - name: startDate
+        in: query
+        schema:
+          type: string
+          format: date
+      - name: endDate
+        in: query
+        schema:
+          type: string
+          format: date
+    responses:
+      '200':
+        description: List of transactions
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/transaction.yaml#/TransactionsResponse'
+      '403':
+        $ref: '../responses/errors.yaml#/Forbidden'
+
+/admin/manual-transactions/{userId}:
+  get:
+    operationId: getUserTransactions
+    summary: Get user's manual transactions
+    description: Admin only. Returns manual transactions for a specific user.
+    tags: [Admin]
+    parameters:
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+    responses:
+      '200':
+        description: User's transactions
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/transaction.yaml#/TransactionsResponse'
+      '403':
+        $ref: '../responses/errors.yaml#/Forbidden'
+
+# ===========================================================================
+# Admin - Subscription Management
+# ===========================================================================
+/admin/cancel-subscription:
+  post:
+    operationId: adminCancelSubscription
+    summary: Cancel a user's subscription
+    description: Admin only. Cancels PayPal subscription and updates status.
+    tags: [Admin]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/subscription.yaml#/CancelSubscriptionRequest'
+    responses:
+      '200':
+        description: Subscription canceled
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/SuccessResponse'
+      '403':
+        $ref: '../responses/errors.yaml#/Forbidden'
+
+/admin/manage-group:
+  post:
+    operationId: manageGoogleGroup
+    summary: Manage Google Group membership
+    description: Admin only. Add or remove user from service's Google Group.
+    tags: [Admin]
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/subscription.yaml#/ManageGroupRequest'
+    responses:
+      '200':
+        description: Group membership updated
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/SuccessResponse'
+      '400':
+        $ref: '../responses/errors.yaml#/BadRequest'
+      '403':
+        $ref: '../responses/errors.yaml#/Forbidden'
+
+# ===========================================================================
+# Admin - Migration (One-time endpoints)
+# ===========================================================================
+/admin/migrate-users:
+  post:
+    operationId: migrateUsers
+    summary: Migrate users to multi-service schema
+    description: Admin only. One-time migration endpoint.
+    tags: [Admin]
+    responses:
+      '200':
+        description: Migration complete
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/subscription.yaml#/MigrationResponse'
+      '403':
+        $ref: '../responses/errors.yaml#/Forbidden'
+
+/admin/seed-services:
+  post:
+    operationId: seedServices
+    summary: Seed initial services
+    description: Admin only. One-time endpoint to seed services collection.
+    tags: [Admin]
+    responses:
+      '200':
+        description: Services seeded
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/service.yaml#/SeedServicesResponse'
+      '403':
+        $ref: '../responses/errors.yaml#/Forbidden'

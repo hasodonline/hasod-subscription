@@ -1,0 +1,326 @@
+# ===========================================================================
+# Transliteration Schemas
+# ===========================================================================
+MediaItem:
+  type: object
+  properties:
+    title:
+      type: string
+      description: Song/track title
+    artist:
+      type: string
+      description: Artist name
+    album:
+      type: string
+      description: Album name
+
+TransliterateRequest:
+  type: object
+  required: [items]
+  properties:
+    items:
+      type: array
+      items:
+        $ref: '#/MediaItem'
+      minItems: 1
+      maxItems: 50
+      description: Array of media items to transliterate (max 50)
+
+TransliteratedItem:
+  type: object
+  properties:
+    original:
+      $ref: '#/MediaItem'
+    transliterated:
+      $ref: '#/MediaItem'
+
+TransliterateResponse:
+  type: object
+  required: [success, items]
+  properties:
+    success:
+      type: boolean
+    items:
+      type: array
+      items:
+        $ref: '#/TransliteratedItem'
+    tokensUsed:
+      type: integer
+      description: Number of OpenAI tokens used
+
+# ===========================================================================
+# Metadata Schemas
+# ===========================================================================
+SpotifyMetadataRequest:
+  type: object
+  required: [spotifyUrl]
+  properties:
+    spotifyUrl:
+      type: string
+      description: |
+        Spotify track URL (e.g., https://open.spotify.com/track/xxx or spotify:track:xxx)
+      example: "https://open.spotify.com/track/5omHkj4qY0A8f6mE4T3fAH"
+
+SpotifyMetadataResponse:
+  type: object
+  required: [success, metadata]
+  properties:
+    success:
+      type: boolean
+    metadata:
+      $ref: '#/SpotifyTrackMetadata'
+
+SpotifyTrackMetadata:
+  type: object
+  required: [trackId, name, artist, album, isrc, duration_ms]
+  properties:
+    trackId:
+      type: string
+      description: Spotify track ID
+      example: "5omHkj4qY0A8f6mE4T3fAH"
+    name:
+      type: string
+      description: Track title
+      example: "היה טוב"
+    artist:
+      type: string
+      description: Primary artist name
+      example: "Omer Adam"
+    album:
+      type: string
+      description: Album name
+      example: "תסמינים של פרידה"
+    isrc:
+      type: string
+      description: International Standard Recording Code
+      example: "IL1012501110"
+    duration_ms:
+      type: integer
+      description: Track duration in milliseconds
+      example: 213879
+    releaseDate:
+      type: string
+      description: Album release date (ISO format)
+      example: "2025-06-10"
+    imageUrl:
+      type: string
+      description: Album cover art URL
+      example: "https://i.scdn.co/image/ab67616d0000b27312d961970aa13291d9720f8b"
+
+SpotifyAlbumMetadataRequest:
+  type: object
+  required: [spotifyUrl]
+  properties:
+    spotifyUrl:
+      type: string
+      description: |
+        Spotify album URL (e.g., https://open.spotify.com/album/xxx)
+      example: "https://open.spotify.com/album/4fnlNjkYSlc6nmkNo5v9nC"
+
+SpotifyAlbumMetadataResponse:
+  type: object
+  required: [success, album, tracks]
+  properties:
+    success:
+      type: boolean
+    album:
+      $ref: '#/SpotifyAlbumInfo'
+    tracks:
+      type: array
+      items:
+        $ref: '#/SpotifyAlbumTrack'
+
+SpotifyAlbumInfo:
+  type: object
+  required: [albumId, name, artist, totalTracks]
+  properties:
+    albumId:
+      type: string
+      description: Spotify album ID
+      example: "4fnlNjkYSlc6nmkNo5v9nC"
+    name:
+      type: string
+      description: Album name
+      example: "זמן להתעורר"
+    artist:
+      type: string
+      description: Primary artist name
+      example: "Hadag Nahash"
+    releaseDate:
+      type: string
+      description: Album release date (ISO format)
+      example: "2013-03-20"
+    totalTracks:
+      type: integer
+      description: Total number of tracks in album
+      example: 13
+    imageUrl:
+      type: string
+      description: Album cover art URL
+      example: "https://i.scdn.co/image/ab67616d0000b273246dd456ad6730fb8a01c99a"
+
+SpotifyAlbumTrack:
+  type: object
+  required: [trackId, position, name, artists, isrc, duration_ms]
+  properties:
+    trackId:
+      type: string
+      description: Spotify track ID
+      example: "7qhrpRjKIXTEIrzXOgQLbY"
+    position:
+      type: integer
+      description: Track position in album (1-based)
+      example: 1
+    name:
+      type: string
+      description: Track title
+      example: "מסתובב"
+    artists:
+      type: string
+      description: Artist names (comma-separated if multiple)
+      example: "Hadag Nahash"
+    album:
+      type: string
+      description: Album name
+      example: "זמן להתעורר"
+    isrc:
+      type: string
+      description: International Standard Recording Code
+      example: "IL4070900127"
+    duration_ms:
+      type: integer
+      description: Track duration in milliseconds
+      example: 56053
+    imageUrl:
+      type: string
+      description: Album cover art URL
+      example: "https://i.scdn.co/image/ab67616d0000b273246dd456ad6730fb8a01c99a"
+    releaseDate:
+      type: string
+      description: Album release date
+      example: "2013-03-20"
+
+SpotifyPlaylistMetadataRequest:
+  type: object
+  required: [spotifyUrl]
+  properties:
+    spotifyUrl:
+      type: string
+      description: |
+        Spotify playlist URL (e.g., https://open.spotify.com/playlist/xxx)
+      example: "https://open.spotify.com/playlist/4aneLdCay41fO9M1JYSTpq"
+
+SpotifyPlaylistMetadataResponse:
+  type: object
+  required: [success, playlist, tracks]
+  properties:
+    success:
+      type: boolean
+    playlist:
+      $ref: '#/SpotifyPlaylistInfo'
+    tracks:
+      type: array
+      items:
+        $ref: '#/SpotifyPlaylistTrack'
+
+SpotifyPlaylistInfo:
+  type: object
+  required: [playlistId, name, owner, totalTracks]
+  properties:
+    playlistId:
+      type: string
+      description: Spotify playlist ID
+      example: "4aneLdCay41fO9M1JYSTpq"
+    name:
+      type: string
+      description: Playlist name
+      example: "Assets"
+    owner:
+      type: string
+      description: Playlist owner/creator name
+      example: "Noga scliar"
+    description:
+      type: string
+      description: Playlist description
+      example: "My favorite tracks"
+    totalTracks:
+      type: integer
+      description: Total number of tracks in playlist
+      example: 88
+    imageUrl:
+      type: string
+      description: Playlist cover image URL
+      example: "https://mosaic.scdn.co/640/..."
+
+SpotifyPlaylistTrack:
+  type: object
+  required: [trackId, position, name, artists, album, isrc, duration_ms]
+  properties:
+    trackId:
+      type: string
+      description: Spotify track ID
+      example: "7pdF27mSDuPWhppnHAmWHa"
+    position:
+      type: integer
+      description: Track position in playlist (1-based)
+      example: 1
+    name:
+      type: string
+      description: Track title
+      example: "whoa (mind in awe)"
+    artists:
+      type: string
+      description: Artist names (comma-separated if multiple)
+      example: "XXXTENTACION"
+    album:
+      type: string
+      description: Album name
+      example: "SKINS"
+    isrc:
+      type: string
+      description: International Standard Recording Code
+      example: "USUYG1226220"
+    duration_ms:
+      type: integer
+      description: Track duration in milliseconds
+      example: 157776
+
+# ===========================================================================
+# Download Link Retrieval Schemas
+# ===========================================================================
+DeezerQuality:
+  type: string
+  enum: [MP3_128, MP3_320, FLAC]
+  default: MP3_320
+  description: Audio quality for Deezer downloads
+
+DeezerIsrcRequest:
+  type: object
+  required: [isrc]
+  properties:
+    isrc:
+      type: string
+      description: International Standard Recording Code
+      example: "IL1012501118"
+      pattern: "^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$"
+    quality:
+      $ref: '#/DeezerQuality'
+
+DeezerDownloadUrlResponse:
+  type: object
+  required: [success, downloadUrl, quality, decryptionKey]
+  properties:
+    success:
+      type: boolean
+      const: true
+    downloadUrl:
+      type: string
+      format: uri
+      description: Direct download URL for the encrypted MP3/FLAC file
+      example: "https://e-cdns-proxy-5.dzcdn.net/mobile/1/..."
+    quality:
+      $ref: '#/DeezerQuality'
+    decryptionKey:
+      type: string
+      description: Blowfish decryption key (hex-encoded, derived from track ID)
+      example: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"

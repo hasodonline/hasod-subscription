@@ -483,12 +483,40 @@ export interface components {
         ServiceResponse: {
             service: components["schemas"]["Service"];
         };
+        AdminServiceRequest: {
+            service: {
+                /** @description If provided, updates existing service */
+                id?: string;
+                name?: string;
+                nameHe?: string;
+                description?: string;
+                descriptionHe?: string;
+                paypalPlanId?: string;
+                pricePerMonth?: number;
+                /** @enum {string} */
+                currency?: "USD" | "ILS";
+                /** Format: email */
+                googleGroupEmail?: string;
+                active?: boolean;
+                order?: number;
+                features?: string[];
+                featuresHe?: string[];
+            };
+        };
+        AdminServiceResponse: {
+            success: boolean;
+            message: string;
+            serviceId: string;
+        };
+        SeedServicesResponse: {
+            success: boolean;
+            message: string;
+            services: string[];
+        };
         /** @enum {string} */
         SubscriptionStatus: "active" | "pending" | "canceled" | "expired" | "suspended" | "none";
         /** @enum {string} */
         PaymentMethod: "paypal" | "manual";
-        /** @enum {string} */
-        ManualPaymentMethod: "cash" | "bank-transfer" | "other";
         UserServiceSubscription: {
             status: components["schemas"]["SubscriptionStatus"];
             paymentMethod: components["schemas"]["PaymentMethod"];
@@ -549,38 +577,26 @@ export interface components {
                 custom_id?: string;
             };
         };
-        SubscriptionStatusResponse: {
-            /** Format: email */
-            email: string;
-            services: {
-                [key: string]: components["schemas"]["UserServiceSubscription"];
-            };
+        CancelSubscriptionRequest: {
+            uid: string;
+            serviceId: string;
+            reason?: string;
         };
-        AdminServiceRequest: {
-            service: {
-                /** @description If provided, updates existing service */
-                id?: string;
-                name?: string;
-                nameHe?: string;
-                description?: string;
-                descriptionHe?: string;
-                paypalPlanId?: string;
-                pricePerMonth?: number;
-                /** @enum {string} */
-                currency?: "USD" | "ILS";
-                /** Format: email */
-                googleGroupEmail?: string;
-                active?: boolean;
-                order?: number;
-                features?: string[];
-                featuresHe?: string[];
-            };
+        ManageGroupRequest: {
+            uid: string;
+            serviceId: string;
+            /** @enum {string} */
+            action: "add" | "remove";
         };
-        AdminServiceResponse: {
+        MigrationResponse: {
             success: boolean;
             message: string;
-            serviceId: string;
+            migrated: number;
+            skipped: number;
+            total: number;
         };
+        /** @enum {string} */
+        ManualPaymentMethod: "cash" | "bank-transfer" | "other";
         ManualPaymentRequest: {
             /** Format: email */
             userEmail: string;
@@ -626,28 +642,12 @@ export interface components {
         TransactionsResponse: {
             transactions: components["schemas"]["ManualTransaction"][];
         };
-        CancelSubscriptionRequest: {
-            uid: string;
-            serviceId: string;
-            reason?: string;
-        };
-        ManageGroupRequest: {
-            uid: string;
-            serviceId: string;
-            /** @enum {string} */
-            action: "add" | "remove";
-        };
-        MigrationResponse: {
-            success: boolean;
-            message: string;
-            migrated: number;
-            skipped: number;
-            total: number;
-        };
-        SeedServicesResponse: {
-            success: boolean;
-            message: string;
-            services: string[];
+        SubscriptionStatusResponse: {
+            /** Format: email */
+            email: string;
+            services: {
+                [key: string]: components["schemas"]["UserServiceSubscription"];
+            };
         };
         MediaItem: {
             /** @description Song/track title */
@@ -926,6 +926,207 @@ export interface components {
              */
             decryptionKey: string;
         };
+        /**
+         * @description Music service identifier:
+         *     - youtube: YouTube tracks/playlists
+         *     - spotify: Spotify tracks/albums/playlists (via ISRC lookup)
+         *     - soundcloud: SoundCloud tracks
+         *     - deezer: Direct Deezer downloads
+         * @enum {string}
+         */
+        MusicService: "youtube" | "spotify" | "soundcloud" | "deezer";
+        /**
+         * @description Download job status:
+         *     - pending: Queued, waiting to start
+         *     - downloading: Actively downloading
+         *     - processing: Post-processing (e.g., metadata embedding)
+         *     - completed: Successfully finished
+         *     - failed: Error occurred
+         *     - cancelled: User cancelled
+         * @enum {string}
+         */
+        DownloadStatus: "pending" | "downloading" | "processing" | "completed" | "failed" | "cancelled";
+        TrackMetadata: {
+            /**
+             * @description Track title
+             * @example היה טוב
+             */
+            title: string;
+            /**
+             * @description Primary artist name
+             * @example Omer Adam
+             */
+            artist: string;
+            /**
+             * @description Album name
+             * @example תסמינים של פרידה
+             */
+            album?: string;
+            /**
+             * @description International Standard Recording Code (if available)
+             * @example IL1012501110
+             */
+            isrc?: string;
+            /**
+             * @description Track duration in seconds
+             * @example 214
+             */
+            duration?: number;
+            /**
+             * @description Release date (ISO format)
+             * @example 2025-06-10
+             */
+            releaseDate?: string;
+            /**
+             * Format: uri
+             * @description Album/track cover art URL
+             * @example https://i.scdn.co/image/ab67616d0000b27312d961970aa13291d9720f8b
+             */
+            imageUrl?: string;
+            /**
+             * @description Track number in album (if applicable)
+             * @example 3
+             */
+            trackNumber?: number;
+        };
+        /** @description Additional context for batch downloads (albums/playlists) */
+        DownloadContext: {
+            /**
+             * @description Download type
+             * @enum {string}
+             */
+            type?: "single" | "album" | "playlist";
+            /** @description Album name (for album downloads) */
+            albumName?: string;
+            /** @description Playlist name (for playlist downloads) */
+            playlistName?: string;
+            /** @description Total number of tracks in album/playlist */
+            totalTracks?: number;
+            /** @description Current track number being processed */
+            currentTrack?: number;
+        };
+        DownloadJob: {
+            /**
+             * Format: uuid
+             * @description Unique job identifier
+             * @example 550e8400-e29b-41d4-a716-446655440000
+             */
+            id: string;
+            /**
+             * Format: uri
+             * @description Original source URL
+             * @example https://open.spotify.com/track/5omHkj4qY0A8f6mE4T3fAH
+             */
+            url: string;
+            service: components["schemas"]["MusicService"];
+            status: components["schemas"]["DownloadStatus"];
+            metadata: components["schemas"]["TrackMetadata"];
+            context?: components["schemas"]["DownloadContext"];
+            /**
+             * @description Download progress percentage
+             * @example 75.5
+             */
+            progress?: number;
+            /**
+             * @description Local file path (when completed)
+             * @example /Users/user/Music/Omer Adam - היה טוב.mp3
+             */
+            outputPath?: string;
+            /**
+             * @description Error message (if status is 'failed')
+             * @example Track not found on Deezer
+             */
+            errorMessage?: string;
+            /**
+             * Format: date-time
+             * @description Job creation timestamp
+             */
+            createdAt: string;
+            /**
+             * Format: date-time
+             * @description Download start timestamp
+             */
+            startedAt?: string;
+            /**
+             * Format: date-time
+             * @description Download completion timestamp
+             */
+            completedAt?: string;
+        };
+        QueueStatus: {
+            /**
+             * @description Total number of jobs in queue
+             * @example 10
+             */
+            totalJobs: number;
+            /**
+             * @description Number of active/downloading jobs
+             * @example 2
+             */
+            activeJobs: number;
+            /**
+             * @description Number of completed jobs
+             * @example 7
+             */
+            completedJobs: number;
+            /**
+             * @description Number of failed jobs
+             * @example 1
+             */
+            failedJobs: number;
+            /** @description List of all jobs in queue */
+            jobs: components["schemas"]["DownloadJob"][];
+        };
+        LicenseStatus: {
+            /**
+             * @description Whether user has active hasod-downloader subscription
+             * @example true
+             */
+            valid: boolean;
+            /**
+             * Format: email
+             * @description User email
+             * @example user@example.com
+             */
+            email: string;
+            /**
+             * Format: date-time
+             * @description Subscription expiration date (if applicable)
+             * @example 2026-12-31T23:59:59Z
+             */
+            expiresAt?: string;
+            subscriptionStatus?: components["schemas"]["SubscriptionStatus"];
+        };
+        OAuthStartResult: {
+            /**
+             * Format: uri
+             * @description OAuth authorization URL to open in browser
+             * @example https://accounts.google.com/o/oauth2/v2/auth?client_id=...
+             */
+            authUrl: string;
+            /**
+             * @description CSRF state parameter for validation
+             * @example random-state-string-12345
+             */
+            state: string;
+        };
+        StoredAuth: {
+            /**
+             * Format: email
+             * @description User email
+             * @example user@example.com
+             */
+            email: string;
+            /** @description Firebase ID token (JWT) */
+            idToken: string;
+            /** @description Firebase refresh token */
+            refreshToken: string;
+            /**
+             * Format: date-time
+             * @description Token expiration timestamp
+             */
+            expiresAt: string;
+        };
     };
     responses: {
         /** @description Bad request - missing or invalid parameters */
@@ -965,10 +1166,7 @@ export interface components {
             };
         };
     };
-    parameters: {
-        /** @description Service identifier (e.g., 'music-library', 'hasod-downloader') */
-        ServiceIdPath: string;
-    };
+    parameters: never;
     requestBodies: never;
     headers: never;
     pathItems: never;
@@ -1001,7 +1199,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Service identifier (e.g., 'music-library', 'hasod-downloader') */
-                serviceId: components["parameters"]["ServiceIdPath"];
+                serviceId: string;
             };
             cookie?: never;
         };
@@ -1154,7 +1352,7 @@ export interface operations {
             header?: never;
             path: {
                 /** @description Service identifier (e.g., 'music-library', 'hasod-downloader') */
-                serviceId: components["parameters"]["ServiceIdPath"];
+                serviceId: string;
             };
             cookie?: never;
         };

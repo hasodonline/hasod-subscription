@@ -1,15 +1,7 @@
 openapi: 3.1.0
+
 info:
-  title: Hasod Subscription API
-  version: 1.0.0
-  description: |
-    Subscription management API for Hasod services.
-    Handles service catalog, PayPal subscriptions, and manual payments.
-  contact:
-    email: hasod@hasodonline.com
-  license:
-    name: Proprietary
-    url: https://hasod-41a23.web.app/terms
+  $ref: './info.yaml'
 
 servers:
   - url: https://us-central1-hasod-41a23.cloudfunctions.net/api
@@ -32,567 +24,67 @@ tags:
     description: Music metadata extraction services
   - name: Download Link Retrieval
     description: Get download links for music tracks (requires hasod-downloader subscription)
+  - name: Desktop
+    description: Desktop app-specific types (download jobs, queue management, license validation)
 
 # Default: no security (public endpoints explicitly set security: [])
 security: []
 
 paths:
-  # ===========================================================================
   # Services
-  # ===========================================================================
   /services:
-    get:
-      operationId: getServices
-      summary: List all active services
-      tags: [Services]
-      responses:
-        '200':
-          description: List of active services
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServicesResponse'
-
+    $ref: './paths/services.yaml#/~1services'
   /services/{serviceId}:
-    get:
-      operationId: getService
-      summary: Get a specific service
-      tags: [Services]
-      parameters:
-        - $ref: '#/components/parameters/ServiceIdPath'
-      responses:
-        '200':
-          description: Service details
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ServiceResponse'
-        '404':
-          $ref: '#/components/responses/NotFound'
+    $ref: './paths/services.yaml#/~1services~1{serviceId}'
 
-  # ===========================================================================
   # Subscriptions
-  # ===========================================================================
   /create-subscription:
-    post:
-      operationId: createSubscription
-      summary: Create a PayPal subscription
-      description: Initiates a PayPal subscription for a user and service
-      tags: [Subscriptions]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CreateSubscriptionRequest'
-      responses:
-        '200':
-          description: Subscription created, approval URL returned
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/CreateSubscriptionResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-
+    $ref: './paths/subscriptions.yaml#/~1create-subscription'
   /activate-subscription:
-    post:
-      operationId: activateSubscription
-      summary: Activate a subscription after PayPal approval
-      tags: [Subscriptions]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ActivateSubscriptionRequest'
-      responses:
-        '200':
-          description: Subscription activated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ActivateSubscriptionResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-
+    $ref: './paths/subscriptions.yaml#/~1activate-subscription'
   /paypal-webhook:
-    post:
-      operationId: handlePaypalWebhook
-      summary: Handle PayPal webhook events
-      description: Processes PayPal subscription lifecycle events
-      tags: [Subscriptions]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/PayPalWebhookEvent'
-      responses:
-        '200':
-          description: Webhook processed successfully
-        '500':
-          description: Webhook processing failed
+    $ref: './paths/subscriptions.yaml#/~1paypal-webhook'
 
-  # ===========================================================================
   # User
-  # ===========================================================================
   /user/subscription-status:
-    get:
-      operationId: getSubscriptionStatus
-      summary: Get user subscription status
-      description: Returns user's subscription status for all services. Used by desktop app for license validation.
-      tags: [User]
-      security:
-        - bearerAuth: []
-        - {}
-      parameters:
-        - name: email
-          in: query
-          description: User email (fallback if no Bearer token)
-          schema:
-            type: string
-            format: email
-      responses:
-        '200':
-          description: User subscription status
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SubscriptionStatusResponse'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
+    $ref: './paths/user.yaml#/~1user~1subscription-status'
 
-  # ===========================================================================
-  # Admin - Services
-  # ===========================================================================
+  # Admin
   /admin/services:
-    post:
-      operationId: createOrUpdateService
-      summary: Create or update a service
-      description: Admin only. Creates a new service or updates existing one.
-      tags: [Admin]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/AdminServiceRequest'
-      responses:
-        '200':
-          description: Service created/updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/AdminServiceResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
+    $ref: './paths/admin.yaml#/~1admin~1services'
   /admin/services/{serviceId}:
-    delete:
-      operationId: deleteService
-      summary: Delete a service
-      description: Admin only. Permanently deletes a service.
-      tags: [Admin]
-      parameters:
-        - $ref: '#/components/parameters/ServiceIdPath'
-      responses:
-        '200':
-          description: Service deleted
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-        '404':
-          $ref: '#/components/responses/NotFound'
-
-  # ===========================================================================
-  # Admin - Manual Payments
-  # ===========================================================================
+    $ref: './paths/admin.yaml#/~1admin~1services~1{serviceId}'
   /admin/manual-payment:
-    post:
-      operationId: processManualPayment
-      summary: Process a manual payment
-      description: Admin only. Records a manual payment and activates subscription.
-      tags: [Admin]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ManualPaymentRequest'
-      responses:
-        '200':
-          description: Payment processed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ManualPaymentResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
+    $ref: './paths/admin.yaml#/~1admin~1manual-payment'
   /admin/manual-transactions:
-    get:
-      operationId: getAllTransactions
-      summary: Get all manual transactions
-      description: Admin only. Returns all manual transactions with optional filters.
-      tags: [Admin]
-      parameters:
-        - name: serviceId
-          in: query
-          schema:
-            type: string
-        - name: startDate
-          in: query
-          schema:
-            type: string
-            format: date
-        - name: endDate
-          in: query
-          schema:
-            type: string
-            format: date
-      responses:
-        '200':
-          description: List of transactions
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TransactionsResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
+    $ref: './paths/admin.yaml#/~1admin~1manual-transactions'
   /admin/manual-transactions/{userId}:
-    get:
-      operationId: getUserTransactions
-      summary: Get user's manual transactions
-      description: Admin only. Returns manual transactions for a specific user.
-      tags: [Admin]
-      parameters:
-        - name: userId
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: User's transactions
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TransactionsResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  # ===========================================================================
-  # Admin - Subscription Management
-  # ===========================================================================
+    $ref: './paths/admin.yaml#/~1admin~1manual-transactions~1{userId}'
   /admin/cancel-subscription:
-    post:
-      operationId: adminCancelSubscription
-      summary: Cancel a user's subscription
-      description: Admin only. Cancels PayPal subscription and updates status.
-      tags: [Admin]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/CancelSubscriptionRequest'
-      responses:
-        '200':
-          description: Subscription canceled
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
+    $ref: './paths/admin.yaml#/~1admin~1cancel-subscription'
   /admin/manage-group:
-    post:
-      operationId: manageGoogleGroup
-      summary: Manage Google Group membership
-      description: Admin only. Add or remove user from service's Google Group.
-      tags: [Admin]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ManageGroupRequest'
-      responses:
-        '200':
-          description: Group membership updated
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SuccessResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
-  # ===========================================================================
-  # Admin - Migration (One-time endpoints)
-  # ===========================================================================
+    $ref: './paths/admin.yaml#/~1admin~1manage-group'
   /admin/migrate-users:
-    post:
-      operationId: migrateUsers
-      summary: Migrate users to multi-service schema
-      description: Admin only. One-time migration endpoint.
-      tags: [Admin]
-      responses:
-        '200':
-          description: Migration complete
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/MigrationResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
-
+    $ref: './paths/admin.yaml#/~1admin~1migrate-users'
   /admin/seed-services:
-    post:
-      operationId: seedServices
-      summary: Seed initial services
-      description: Admin only. One-time endpoint to seed services collection.
-      tags: [Admin]
-      responses:
-        '200':
-          description: Services seeded
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SeedServicesResponse'
-        '403':
-          $ref: '#/components/responses/Forbidden'
+    $ref: './paths/admin.yaml#/~1admin~1seed-services'
 
-  # ===========================================================================
   # Transliteration
-  # ===========================================================================
   /transliterate:
-    post:
-      operationId: transliterateMedia
-      summary: Transliterate Hebrew media names to English
-      description: |
-        Transliterates song, artist, and album names from Hebrew to English.
-        Uses OpenAI for intelligent transliteration that preserves meaning.
-        Requires user authentication.
-      tags: [Transliteration]
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/TransliterateRequest'
-      responses:
-        '200':
-          description: Transliteration successful
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/TransliterateResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: Subscription required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+    $ref: './paths/transliteration.yaml#/~1transliterate'
 
-  # ===========================================================================
-  # Metadata
-  # ===========================================================================
+  # Metadata & Downloads
   /metadata/spotify:
-    post:
-      operationId: getSpotifyMetadata
-      summary: Extract Spotify track metadata
-      description: |
-        Extracts complete track metadata from a Spotify URL including:
-        - Artist name
-        - Track title
-        - Album name
-        - ISRC (International Standard Recording Code)
-        - Duration (milliseconds)
-        - Release date
-        - Cover art URL
-
-        Uses Spotify's public embed page to obtain an anonymous access token,
-        then calls the Spotify API for complete metadata. No authentication required.
-      tags: [Metadata]
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SpotifyMetadataRequest'
-      responses:
-        '200':
-          description: Metadata extracted successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SpotifyMetadataResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          description: Failed to extract metadata
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
+    $ref: './paths/metadata.yaml#/~1metadata~1spotify'
   /metadata/spotify/album:
-    post:
-      operationId: getSpotifyAlbumMetadata
-      summary: Extract Spotify album metadata with all tracks
-      description: |
-        Extracts complete album metadata including all tracks with ISRCs.
-        Returns album information and a list of all tracks with their metadata.
-
-        **Batch Processing:**
-        - Fetches up to 50 tracks in a single API call
-        - Each track includes ISRC for Deezer matching
-        - Ideal for album/playlist downloads
-
-        Uses Spotify's public embed page to obtain an anonymous access token,
-        then calls the Spotify API. No authentication required.
-      tags: [Metadata]
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SpotifyAlbumMetadataRequest'
-      responses:
-        '200':
-          description: Album metadata extracted successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SpotifyAlbumMetadataResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          description: Failed to extract album metadata
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
+    $ref: './paths/metadata.yaml#/~1metadata~1spotify~1album'
   /metadata/spotify/playlist:
-    post:
-      operationId: getSpotifyPlaylistMetadata
-      summary: Extract Spotify playlist metadata with all tracks
-      description: |
-        Extracts complete playlist metadata including all tracks with ISRCs.
-        Returns playlist information and a list of all tracks with their metadata.
-
-        **Batch Processing:**
-        - Fetches up to 100 tracks per request
-        - Each track includes ISRC for Deezer matching
-        - Handles large playlists efficiently
-
-        Uses Spotify's public embed page to obtain an anonymous access token,
-        then calls the Spotify API. No authentication required.
-      tags: [Metadata]
-      security: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/SpotifyPlaylistMetadataRequest'
-      responses:
-        '200':
-          description: Playlist metadata extracted successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/SpotifyPlaylistMetadataResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '500':
-          description: Failed to extract playlist metadata
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-
-  # ===========================================================================
-  # Download Link Retrieval
-  # ===========================================================================
+    $ref: './paths/metadata.yaml#/~1metadata~1spotify~1playlist'
   /download/deezer/isrc:
-    post:
-      operationId: getDeezerDownloadUrl
-      summary: Get Deezer download URL from ISRC
-      description: |
-        Retrieves a direct download URL for a track from Deezer using its ISRC code.
-        Returns an encrypted MP3 download link that can be used to download the track.
-
-        **Quality Options:**
-        - `MP3_128` - 128 kbps MP3
-        - `MP3_320` - 320 kbps MP3 (default)
-        - `FLAC` - Lossless FLAC audio
-
-        **Authentication:** Requires active `hasod-downloader` subscription.
-      tags: [Download Link Retrieval]
-      security:
-        - bearerAuth: []
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DeezerIsrcRequest'
-      responses:
-        '200':
-          description: Download URL retrieved successfully
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/DeezerDownloadUrlResponse'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '403':
-          description: Subscription required
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '404':
-          description: Track not found on Deezer
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
-        '500':
-          description: Failed to retrieve download URL
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+    $ref: './paths/metadata.yaml#/~1download~1deezer~1isrc'
 
 components:
-  # ===========================================================================
   # Security Schemes
-  # ===========================================================================
   securitySchemes:
     bearerAuth:
       type: http
@@ -600,833 +92,133 @@ components:
       bearerFormat: JWT
       description: Firebase ID token
 
-  # ===========================================================================
-  # Parameters
-  # ===========================================================================
-  parameters:
-    ServiceIdPath:
-      name: serviceId
-      in: path
-      required: true
-      schema:
-        type: string
-      description: Service identifier (e.g., 'music-library', 'hasod-downloader')
-
-  # ===========================================================================
   # Responses
-  # ===========================================================================
   responses:
     BadRequest:
-      description: Bad request - missing or invalid parameters
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
+      $ref: './responses/errors.yaml#/BadRequest'
     Unauthorized:
-      description: Authentication required
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
+      $ref: './responses/errors.yaml#/Unauthorized'
     Forbidden:
-      description: Access denied - admin privileges required
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
-
+      $ref: './responses/errors.yaml#/Forbidden'
     NotFound:
-      description: Resource not found
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ErrorResponse'
+      $ref: './responses/errors.yaml#/NotFound'
 
-  # ===========================================================================
   # Schemas
-  # ===========================================================================
   schemas:
-    # -------------------------------------------------------------------------
     # Common
-    # -------------------------------------------------------------------------
     ErrorResponse:
-      type: object
-      required: [error]
-      properties:
-        error:
-          type: string
-        code:
-          type: string
-        message:
-          type: string
-
+      $ref: './schemas/common.yaml#/ErrorResponse'
     SuccessResponse:
-      type: object
-      required: [success, message]
-      properties:
-        success:
-          type: boolean
-          const: true
-        message:
-          type: string
+      $ref: './schemas/common.yaml#/SuccessResponse'
 
-    # -------------------------------------------------------------------------
-    # Service Schemas
-    # -------------------------------------------------------------------------
+    # Service
     Service:
-      type: object
-      required:
-        - id
-        - name
-        - nameHe
-        - description
-        - descriptionHe
-        - paypalPlanId
-        - pricePerMonth
-        - currency
-        - active
-        - order
-        - features
-        - featuresHe
-      properties:
-        id:
-          type: string
-          examples: ['music-library', 'hasod-downloader']
-        name:
-          type: string
-          examples: ['Music Library Access']
-        nameHe:
-          type: string
-          examples: ['גישה לספריית המוזיקה']
-        description:
-          type: string
-        descriptionHe:
-          type: string
-        paypalPlanId:
-          type: string
-          examples: ['P-4TS05390XU019010LNAY3XOI']
-        pricePerMonth:
-          type: number
-          examples: [10]
-        currency:
-          type: string
-          enum: [USD, ILS]
-        googleGroupEmail:
-          type: string
-          format: email
-        active:
-          type: boolean
-        order:
-          type: integer
-        features:
-          type: array
-          items:
-            type: string
-        featuresHe:
-          type: array
-          items:
-            type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        createdBy:
-          type: string
-
+      $ref: './schemas/service.yaml#/Service'
     ServicesResponse:
-      type: object
-      required: [services]
-      properties:
-        services:
-          type: array
-          items:
-            $ref: '#/components/schemas/Service'
-
+      $ref: './schemas/service.yaml#/ServicesResponse'
     ServiceResponse:
-      type: object
-      required: [service]
-      properties:
-        service:
-          $ref: '#/components/schemas/Service'
-
-    # -------------------------------------------------------------------------
-    # Subscription Schemas
-    # -------------------------------------------------------------------------
-    SubscriptionStatus:
-      type: string
-      enum: [active, pending, canceled, expired, suspended, none]
-
-    PaymentMethod:
-      type: string
-      enum: [paypal, manual]
-
-    ManualPaymentMethod:
-      type: string
-      enum: [cash, bank-transfer, other]
-
-    UserServiceSubscription:
-      type: object
-      required: [status, paymentMethod, updatedAt]
-      properties:
-        status:
-          $ref: '#/components/schemas/SubscriptionStatus'
-        paymentMethod:
-          $ref: '#/components/schemas/PaymentMethod'
-        paypalSubscriptionId:
-          type: string
-        paypalSubscriptionStatus:
-          type: string
-        manualStartDate:
-          type: string
-          format: date-time
-        manualEndDate:
-          type: string
-          format: date-time
-        manualTransactionId:
-          type: string
-        inGoogleGroup:
-          type: boolean
-        activatedAt:
-          type: string
-          format: date-time
-        expiresAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-
-    CreateSubscriptionRequest:
-      type: object
-      required: [uid, serviceId]
-      properties:
-        uid:
-          type: string
-          description: Firebase user ID
-        serviceId:
-          type: string
-          description: Service to subscribe to
-
-    CreateSubscriptionResponse:
-      type: object
-      required: [approvalUrl, subscriptionId]
-      properties:
-        approvalUrl:
-          type: string
-          format: uri
-          description: PayPal approval URL to redirect user
-        subscription:
-          type: object
-          description: PayPal subscription object
-        subscriptionId:
-          type: string
-
-    ActivateSubscriptionRequest:
-      type: object
-      required: [uid, subscriptionId]
-      properties:
-        uid:
-          type: string
-        subscriptionId:
-          type: string
-          description: PayPal subscription ID
-
-    ActivateSubscriptionResponse:
-      type: object
-      required: [success, status, serviceId]
-      properties:
-        success:
-          type: boolean
-        status:
-          type: string
-        serviceId:
-          type: string
-        subscription:
-          type: object
-
-    PayPalWebhookEvent:
-      type: object
-      properties:
-        id:
-          type: string
-        event_type:
-          type: string
-          examples:
-            - BILLING.SUBSCRIPTION.ACTIVATED
-            - BILLING.SUBSCRIPTION.CANCELLED
-            - BILLING.SUBSCRIPTION.EXPIRED
-            - BILLING.SUBSCRIPTION.SUSPENDED
-        resource:
-          type: object
-          properties:
-            id:
-              type: string
-            status:
-              type: string
-            custom_id:
-              type: string
-
-    # -------------------------------------------------------------------------
-    # User Schemas
-    # -------------------------------------------------------------------------
-    SubscriptionStatusResponse:
-      type: object
-      required: [email, services]
-      properties:
-        email:
-          type: string
-          format: email
-        services:
-          type: object
-          additionalProperties:
-            $ref: '#/components/schemas/UserServiceSubscription'
-
-    # -------------------------------------------------------------------------
-    # Admin Schemas
-    # -------------------------------------------------------------------------
+      $ref: './schemas/service.yaml#/ServiceResponse'
     AdminServiceRequest:
-      type: object
-      required: [service]
-      properties:
-        service:
-          type: object
-          properties:
-            id:
-              type: string
-              description: If provided, updates existing service
-            name:
-              type: string
-            nameHe:
-              type: string
-            description:
-              type: string
-            descriptionHe:
-              type: string
-            paypalPlanId:
-              type: string
-            pricePerMonth:
-              type: number
-            currency:
-              type: string
-              enum: [USD, ILS]
-            googleGroupEmail:
-              type: string
-              format: email
-            active:
-              type: boolean
-            order:
-              type: integer
-            features:
-              type: array
-              items:
-                type: string
-            featuresHe:
-              type: array
-              items:
-                type: string
-
+      $ref: './schemas/service.yaml#/AdminServiceRequest'
     AdminServiceResponse:
-      type: object
-      required: [success, message, serviceId]
-      properties:
-        success:
-          type: boolean
-        message:
-          type: string
-        serviceId:
-          type: string
-
-    ManualPaymentRequest:
-      type: object
-      required:
-        - userEmail
-        - serviceId
-        - amount
-        - durationMonths
-        - paymentMethod
-        - processedByUid
-        - processedByEmail
-      properties:
-        userEmail:
-          type: string
-          format: email
-        serviceId:
-          type: string
-        amount:
-          type: number
-          minimum: 0
-        durationMonths:
-          type: integer
-          minimum: 1
-          maximum: 120
-        paymentMethod:
-          $ref: '#/components/schemas/ManualPaymentMethod'
-        notes:
-          type: string
-        receiptNumber:
-          type: string
-        processedByUid:
-          type: string
-        processedByEmail:
-          type: string
-          format: email
-
-    ManualPaymentResponse:
-      type: object
-      required: [success, message, transactionId, userId]
-      properties:
-        success:
-          type: boolean
-        message:
-          type: string
-        transactionId:
-          type: string
-        userId:
-          type: string
-
-    ManualTransaction:
-      type: object
-      required:
-        - id
-        - userId
-        - userEmail
-        - serviceId
-        - serviceName
-        - amount
-        - currency
-        - durationMonths
-        - startDate
-        - endDate
-        - paymentMethod
-        - processedBy
-        - processedByEmail
-        - createdAt
-      properties:
-        id:
-          type: string
-        userId:
-          type: string
-        userEmail:
-          type: string
-          format: email
-        serviceId:
-          type: string
-        serviceName:
-          type: string
-        amount:
-          type: number
-        currency:
-          type: string
-        durationMonths:
-          type: integer
-        startDate:
-          type: string
-          format: date-time
-        endDate:
-          type: string
-          format: date-time
-        notes:
-          type: string
-        paymentMethod:
-          type: string
-        receiptNumber:
-          type: string
-        processedBy:
-          type: string
-        processedByEmail:
-          type: string
-          format: email
-        createdAt:
-          type: string
-          format: date-time
-
-    TransactionsResponse:
-      type: object
-      required: [transactions]
-      properties:
-        transactions:
-          type: array
-          items:
-            $ref: '#/components/schemas/ManualTransaction'
-
-    CancelSubscriptionRequest:
-      type: object
-      required: [uid, serviceId]
-      properties:
-        uid:
-          type: string
-        serviceId:
-          type: string
-        reason:
-          type: string
-
-    ManageGroupRequest:
-      type: object
-      required: [uid, serviceId, action]
-      properties:
-        uid:
-          type: string
-        serviceId:
-          type: string
-        action:
-          type: string
-          enum: [add, remove]
-
-    MigrationResponse:
-      type: object
-      required: [success, message, migrated, skipped, total]
-      properties:
-        success:
-          type: boolean
-        message:
-          type: string
-        migrated:
-          type: integer
-        skipped:
-          type: integer
-        total:
-          type: integer
-
+      $ref: './schemas/service.yaml#/AdminServiceResponse'
     SeedServicesResponse:
-      type: object
-      required: [success, message, services]
-      properties:
-        success:
-          type: boolean
-        message:
-          type: string
-        services:
-          type: array
-          items:
-            type: string
+      $ref: './schemas/service.yaml#/SeedServicesResponse'
 
-    # -------------------------------------------------------------------------
-    # Transliteration Schemas
-    # -------------------------------------------------------------------------
+    # Subscription
+    SubscriptionStatus:
+      $ref: './schemas/subscription.yaml#/SubscriptionStatus'
+    PaymentMethod:
+      $ref: './schemas/subscription.yaml#/PaymentMethod'
+    UserServiceSubscription:
+      $ref: './schemas/subscription.yaml#/UserServiceSubscription'
+    CreateSubscriptionRequest:
+      $ref: './schemas/subscription.yaml#/CreateSubscriptionRequest'
+    CreateSubscriptionResponse:
+      $ref: './schemas/subscription.yaml#/CreateSubscriptionResponse'
+    ActivateSubscriptionRequest:
+      $ref: './schemas/subscription.yaml#/ActivateSubscriptionRequest'
+    ActivateSubscriptionResponse:
+      $ref: './schemas/subscription.yaml#/ActivateSubscriptionResponse'
+    PayPalWebhookEvent:
+      $ref: './schemas/subscription.yaml#/PayPalWebhookEvent'
+    CancelSubscriptionRequest:
+      $ref: './schemas/subscription.yaml#/CancelSubscriptionRequest'
+    ManageGroupRequest:
+      $ref: './schemas/subscription.yaml#/ManageGroupRequest'
+    MigrationResponse:
+      $ref: './schemas/subscription.yaml#/MigrationResponse'
+
+    # Transaction
+    ManualPaymentMethod:
+      $ref: './schemas/transaction.yaml#/ManualPaymentMethod'
+    ManualPaymentRequest:
+      $ref: './schemas/transaction.yaml#/ManualPaymentRequest'
+    ManualPaymentResponse:
+      $ref: './schemas/transaction.yaml#/ManualPaymentResponse'
+    ManualTransaction:
+      $ref: './schemas/transaction.yaml#/ManualTransaction'
+    TransactionsResponse:
+      $ref: './schemas/transaction.yaml#/TransactionsResponse'
+
+    # User
+    SubscriptionStatusResponse:
+      $ref: './schemas/user.yaml#/SubscriptionStatusResponse'
+
+    # Metadata
     MediaItem:
-      type: object
-      properties:
-        title:
-          type: string
-          description: Song/track title
-        artist:
-          type: string
-          description: Artist name
-        album:
-          type: string
-          description: Album name
-
+      $ref: './schemas/metadata.yaml#/MediaItem'
     TransliterateRequest:
-      type: object
-      required: [items]
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/MediaItem'
-          minItems: 1
-          maxItems: 50
-          description: Array of media items to transliterate (max 50)
-
+      $ref: './schemas/metadata.yaml#/TransliterateRequest'
     TransliteratedItem:
-      type: object
-      properties:
-        original:
-          $ref: '#/components/schemas/MediaItem'
-        transliterated:
-          $ref: '#/components/schemas/MediaItem'
-
+      $ref: './schemas/metadata.yaml#/TransliteratedItem'
     TransliterateResponse:
-      type: object
-      required: [success, items]
-      properties:
-        success:
-          type: boolean
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/TransliteratedItem'
-        tokensUsed:
-          type: integer
-          description: Number of OpenAI tokens used
-
-    # -------------------------------------------------------------------------
-    # Metadata Schemas
-    # -------------------------------------------------------------------------
+      $ref: './schemas/metadata.yaml#/TransliterateResponse'
     SpotifyMetadataRequest:
-      type: object
-      required: [spotifyUrl]
-      properties:
-        spotifyUrl:
-          type: string
-          description: |
-            Spotify track URL (e.g., https://open.spotify.com/track/xxx or spotify:track:xxx)
-          example: "https://open.spotify.com/track/5omHkj4qY0A8f6mE4T3fAH"
-
+      $ref: './schemas/metadata.yaml#/SpotifyMetadataRequest'
     SpotifyMetadataResponse:
-      type: object
-      required: [success, metadata]
-      properties:
-        success:
-          type: boolean
-        metadata:
-          $ref: '#/components/schemas/SpotifyTrackMetadata'
-
+      $ref: './schemas/metadata.yaml#/SpotifyMetadataResponse'
     SpotifyTrackMetadata:
-      type: object
-      required: [trackId, name, artist, album, isrc, duration_ms]
-      properties:
-        trackId:
-          type: string
-          description: Spotify track ID
-          example: "5omHkj4qY0A8f6mE4T3fAH"
-        name:
-          type: string
-          description: Track title
-          example: "היה טוב"
-        artist:
-          type: string
-          description: Primary artist name
-          example: "Omer Adam"
-        album:
-          type: string
-          description: Album name
-          example: "תסמינים של פרידה"
-        isrc:
-          type: string
-          description: International Standard Recording Code
-          example: "IL1012501110"
-        duration_ms:
-          type: integer
-          description: Track duration in milliseconds
-          example: 213879
-        releaseDate:
-          type: string
-          description: Album release date (ISO format)
-          example: "2025-06-10"
-        imageUrl:
-          type: string
-          description: Album cover art URL
-          example: "https://i.scdn.co/image/ab67616d0000b27312d961970aa13291d9720f8b"
-
+      $ref: './schemas/metadata.yaml#/SpotifyTrackMetadata'
     SpotifyAlbumMetadataRequest:
-      type: object
-      required: [spotifyUrl]
-      properties:
-        spotifyUrl:
-          type: string
-          description: |
-            Spotify album URL (e.g., https://open.spotify.com/album/xxx)
-          example: "https://open.spotify.com/album/4fnlNjkYSlc6nmkNo5v9nC"
-
+      $ref: './schemas/metadata.yaml#/SpotifyAlbumMetadataRequest'
     SpotifyAlbumMetadataResponse:
-      type: object
-      required: [success, album, tracks]
-      properties:
-        success:
-          type: boolean
-        album:
-          $ref: '#/components/schemas/SpotifyAlbumInfo'
-        tracks:
-          type: array
-          items:
-            $ref: '#/components/schemas/SpotifyAlbumTrack'
-
+      $ref: './schemas/metadata.yaml#/SpotifyAlbumMetadataResponse'
     SpotifyAlbumInfo:
-      type: object
-      required: [albumId, name, artist, totalTracks]
-      properties:
-        albumId:
-          type: string
-          description: Spotify album ID
-          example: "4fnlNjkYSlc6nmkNo5v9nC"
-        name:
-          type: string
-          description: Album name
-          example: "זמן להתעורר"
-        artist:
-          type: string
-          description: Primary artist name
-          example: "Hadag Nahash"
-        releaseDate:
-          type: string
-          description: Album release date (ISO format)
-          example: "2013-03-20"
-        totalTracks:
-          type: integer
-          description: Total number of tracks in album
-          example: 13
-        imageUrl:
-          type: string
-          description: Album cover art URL
-          example: "https://i.scdn.co/image/ab67616d0000b273246dd456ad6730fb8a01c99a"
-
+      $ref: './schemas/metadata.yaml#/SpotifyAlbumInfo'
     SpotifyAlbumTrack:
-      type: object
-      required: [trackId, position, name, artists, isrc, duration_ms]
-      properties:
-        trackId:
-          type: string
-          description: Spotify track ID
-          example: "7qhrpRjKIXTEIrzXOgQLbY"
-        position:
-          type: integer
-          description: Track position in album (1-based)
-          example: 1
-        name:
-          type: string
-          description: Track title
-          example: "מסתובב"
-        artists:
-          type: string
-          description: Artist names (comma-separated if multiple)
-          example: "Hadag Nahash"
-        album:
-          type: string
-          description: Album name
-          example: "זמן להתעורר"
-        isrc:
-          type: string
-          description: International Standard Recording Code
-          example: "IL4070900127"
-        duration_ms:
-          type: integer
-          description: Track duration in milliseconds
-          example: 56053
-        imageUrl:
-          type: string
-          description: Album cover art URL
-          example: "https://i.scdn.co/image/ab67616d0000b273246dd456ad6730fb8a01c99a"
-        releaseDate:
-          type: string
-          description: Album release date
-          example: "2013-03-20"
-
+      $ref: './schemas/metadata.yaml#/SpotifyAlbumTrack'
     SpotifyPlaylistMetadataRequest:
-      type: object
-      required: [spotifyUrl]
-      properties:
-        spotifyUrl:
-          type: string
-          description: |
-            Spotify playlist URL (e.g., https://open.spotify.com/playlist/xxx)
-          example: "https://open.spotify.com/playlist/4aneLdCay41fO9M1JYSTpq"
-
+      $ref: './schemas/metadata.yaml#/SpotifyPlaylistMetadataRequest'
     SpotifyPlaylistMetadataResponse:
-      type: object
-      required: [success, playlist, tracks]
-      properties:
-        success:
-          type: boolean
-        playlist:
-          $ref: '#/components/schemas/SpotifyPlaylistInfo'
-        tracks:
-          type: array
-          items:
-            $ref: '#/components/schemas/SpotifyPlaylistTrack'
-
+      $ref: './schemas/metadata.yaml#/SpotifyPlaylistMetadataResponse'
     SpotifyPlaylistInfo:
-      type: object
-      required: [playlistId, name, owner, totalTracks]
-      properties:
-        playlistId:
-          type: string
-          description: Spotify playlist ID
-          example: "4aneLdCay41fO9M1JYSTpq"
-        name:
-          type: string
-          description: Playlist name
-          example: "Assets"
-        owner:
-          type: string
-          description: Playlist owner/creator name
-          example: "Noga scliar"
-        description:
-          type: string
-          description: Playlist description
-          example: "My favorite tracks"
-        totalTracks:
-          type: integer
-          description: Total number of tracks in playlist
-          example: 88
-        imageUrl:
-          type: string
-          description: Playlist cover image URL
-          example: "https://mosaic.scdn.co/640/..."
-
+      $ref: './schemas/metadata.yaml#/SpotifyPlaylistInfo'
     SpotifyPlaylistTrack:
-      type: object
-      required: [trackId, position, name, artists, album, isrc, duration_ms]
-      properties:
-        trackId:
-          type: string
-          description: Spotify track ID
-          example: "7pdF27mSDuPWhppnHAmWHa"
-        position:
-          type: integer
-          description: Track position in playlist (1-based)
-          example: 1
-        name:
-          type: string
-          description: Track title
-          example: "whoa (mind in awe)"
-        artists:
-          type: string
-          description: Artist names (comma-separated if multiple)
-          example: "XXXTENTACION"
-        album:
-          type: string
-          description: Album name
-          example: "SKINS"
-        isrc:
-          type: string
-          description: International Standard Recording Code
-          example: "USUYG1226220"
-        duration_ms:
-          type: integer
-          description: Track duration in milliseconds
-          example: 157776
-
-    # -------------------------------------------------------------------------
-    # Download Link Retrieval Schemas
-    # -------------------------------------------------------------------------
+      $ref: './schemas/metadata.yaml#/SpotifyPlaylistTrack'
     DeezerQuality:
-      type: string
-      enum: [MP3_128, MP3_320, FLAC]
-      default: MP3_320
-      description: Audio quality for Deezer downloads
-
+      $ref: './schemas/metadata.yaml#/DeezerQuality'
     DeezerIsrcRequest:
-      type: object
-      required: [isrc]
-      properties:
-        isrc:
-          type: string
-          description: International Standard Recording Code
-          example: "IL1012501118"
-          pattern: "^[A-Z]{2}[A-Z0-9]{3}[0-9]{7}$"
-        quality:
-          $ref: '#/components/schemas/DeezerQuality'
-
+      $ref: './schemas/metadata.yaml#/DeezerIsrcRequest'
     DeezerDownloadUrlResponse:
-      type: object
-      required: [success, downloadUrl, quality, decryptionKey]
-      properties:
-        success:
-          type: boolean
-          const: true
-        downloadUrl:
-          type: string
-          format: uri
-          description: Direct download URL for the encrypted MP3/FLAC file
-          example: "https://e-cdns-proxy-5.dzcdn.net/mobile/1/..."
-        quality:
-          $ref: '#/components/schemas/DeezerQuality'
-        decryptionKey:
-          type: string
-          description: Blowfish decryption key (hex-encoded, derived from track ID)
-          example: "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6"
+      $ref: './schemas/metadata.yaml#/DeezerDownloadUrlResponse'
+
+    # Desktop
+    MusicService:
+      $ref: './schemas/desktop.yaml#/MusicService'
+    DownloadStatus:
+      $ref: './schemas/desktop.yaml#/DownloadStatus'
+    TrackMetadata:
+      $ref: './schemas/desktop.yaml#/TrackMetadata'
+    DownloadContext:
+      $ref: './schemas/desktop.yaml#/DownloadContext'
+    DownloadJob:
+      $ref: './schemas/desktop.yaml#/DownloadJob'
+    QueueStatus:
+      $ref: './schemas/desktop.yaml#/QueueStatus'
+    LicenseStatus:
+      $ref: './schemas/desktop.yaml#/LicenseStatus'
+    OAuthStartResult:
+      $ref: './schemas/desktop.yaml#/OAuthStartResult'
+    StoredAuth:
+      $ref: './schemas/desktop.yaml#/StoredAuth'

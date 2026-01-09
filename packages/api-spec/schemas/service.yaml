@@ -1,0 +1,142 @@
+Service:
+  type: object
+  required:
+    - id
+    - name
+    - nameHe
+    - description
+    - descriptionHe
+    - paypalPlanId
+    - pricePerMonth
+    - currency
+    - active
+    - order
+    - features
+    - featuresHe
+  properties:
+    id:
+      type: string
+      examples: ['music-library', 'hasod-downloader']
+    name:
+      type: string
+      examples: ['Music Library Access']
+    nameHe:
+      type: string
+      examples: ['גישה לספריית המוזיקה']
+    description:
+      type: string
+    descriptionHe:
+      type: string
+    paypalPlanId:
+      type: string
+      examples: ['P-4TS05390XU019010LNAY3XOI']
+    pricePerMonth:
+      type: number
+      examples: [10]
+    currency:
+      type: string
+      enum: [USD, ILS]
+    googleGroupEmail:
+      type: string
+      format: email
+    active:
+      type: boolean
+    order:
+      type: integer
+    features:
+      type: array
+      items:
+        type: string
+    featuresHe:
+      type: array
+      items:
+        type: string
+    createdAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+    createdBy:
+      type: string
+
+ServicesResponse:
+  type: object
+  required: [services]
+  properties:
+    services:
+      type: array
+      items:
+        $ref: '#/Service'
+
+ServiceResponse:
+  type: object
+  required: [service]
+  properties:
+    service:
+      $ref: '#/Service'
+
+AdminServiceRequest:
+  type: object
+  required: [service]
+  properties:
+    service:
+      type: object
+      properties:
+        id:
+          type: string
+          description: If provided, updates existing service
+        name:
+          type: string
+        nameHe:
+          type: string
+        description:
+          type: string
+        descriptionHe:
+          type: string
+        paypalPlanId:
+          type: string
+        pricePerMonth:
+          type: number
+        currency:
+          type: string
+          enum: [USD, ILS]
+        googleGroupEmail:
+          type: string
+          format: email
+        active:
+          type: boolean
+        order:
+          type: integer
+        features:
+          type: array
+          items:
+            type: string
+        featuresHe:
+          type: array
+          items:
+            type: string
+
+AdminServiceResponse:
+  type: object
+  required: [success, message, serviceId]
+  properties:
+    success:
+      type: boolean
+    message:
+      type: string
+    serviceId:
+      type: string
+
+SeedServicesResponse:
+  type: object
+  required: [success, message, services]
+  properties:
+    success:
+      type: boolean
+    message:
+      type: string
+    services:
+      type: array
+      items:
+        type: string

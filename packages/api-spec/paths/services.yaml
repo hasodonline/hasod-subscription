@@ -1,0 +1,34 @@
+/services:
+  get:
+    operationId: getServices
+    summary: List all active services
+    tags: [Services]
+    responses:
+      '200':
+        description: List of active services
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/service.yaml#/ServicesResponse'
+
+/services/{serviceId}:
+  get:
+    operationId: getService
+    summary: Get a specific service
+    tags: [Services]
+    parameters:
+      - name: serviceId
+        in: path
+        required: true
+        schema:
+          type: string
+        description: Service identifier (e.g., 'music-library', 'hasod-downloader')
+    responses:
+      '200':
+        description: Service details
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/service.yaml#/ServiceResponse'
+      '404':
+        $ref: '../responses/errors.yaml#/NotFound'

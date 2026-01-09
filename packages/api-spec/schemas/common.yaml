@@ -1,0 +1,20 @@
+ErrorResponse:
+  type: object
+  required: [error]
+  properties:
+    error:
+      type: string
+    code:
+      type: string
+    message:
+      type: string
+
+SuccessResponse:
+  type: object
+  required: [success, message]
+  properties:
+    success:
+      type: boolean
+      const: true
+    message:
+      type: string

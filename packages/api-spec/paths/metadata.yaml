@@ -1,0 +1,170 @@
+/metadata/spotify:
+  post:
+    operationId: getSpotifyMetadata
+    summary: Extract Spotify track metadata
+    description: |
+      Extracts complete track metadata from a Spotify URL including:
+      - Artist name
+      - Track title
+      - Album name
+      - ISRC (International Standard Recording Code)
+      - Duration (milliseconds)
+      - Release date
+      - Cover art URL
+
+      Uses Spotify's public embed page to obtain an anonymous access token,
+      then calls the Spotify API for complete metadata. No authentication required.
+    tags: [Metadata]
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/metadata.yaml#/SpotifyMetadataRequest'
+    responses:
+      '200':
+        description: Metadata extracted successfully
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/metadata.yaml#/SpotifyMetadataResponse'
+      '400':
+        $ref: '../responses/errors.yaml#/BadRequest'
+      '500':
+        description: Failed to extract metadata
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ErrorResponse'
+
+/metadata/spotify/album:
+  post:
+    operationId: getSpotifyAlbumMetadata
+    summary: Extract Spotify album metadata with all tracks
+    description: |
+      Extracts complete album metadata including all tracks with ISRCs.
+      Returns album information and a list of all tracks with their metadata.
+
+      **Batch Processing:**
+      - Fetches up to 50 tracks in a single API call
+      - Each track includes ISRC for Deezer matching
+      - Ideal for album/playlist downloads
+
+      Uses Spotify's public embed page to obtain an anonymous access token,
+      then calls the Spotify API. No authentication required.
+    tags: [Metadata]
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/metadata.yaml#/SpotifyAlbumMetadataRequest'
+    responses:
+      '200':
+        description: Album metadata extracted successfully
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/metadata.yaml#/SpotifyAlbumMetadataResponse'
+      '400':
+        $ref: '../responses/errors.yaml#/BadRequest'
+      '500':
+        description: Failed to extract album metadata
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ErrorResponse'
+
+/metadata/spotify/playlist:
+  post:
+    operationId: getSpotifyPlaylistMetadata
+    summary: Extract Spotify playlist metadata with all tracks
+    description: |
+      Extracts complete playlist metadata including all tracks with ISRCs.
+      Returns playlist information and a list of all tracks with their metadata.
+
+      **Batch Processing:**
+      - Fetches up to 100 tracks per request
+      - Each track includes ISRC for Deezer matching
+      - Handles large playlists efficiently
+
+      Uses Spotify's public embed page to obtain an anonymous access token,
+      then calls the Spotify API. No authentication required.
+    tags: [Metadata]
+    security: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/metadata.yaml#/SpotifyPlaylistMetadataRequest'
+    responses:
+      '200':
+        description: Playlist metadata extracted successfully
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/metadata.yaml#/SpotifyPlaylistMetadataResponse'
+      '400':
+        $ref: '../responses/errors.yaml#/BadRequest'
+      '500':
+        description: Failed to extract playlist metadata
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ErrorResponse'
+
+/download/deezer/isrc:
+  post:
+    operationId: getDeezerDownloadUrl
+    summary: Get Deezer download URL from ISRC
+    description: |
+      Retrieves a direct download URL for a track from Deezer using its ISRC code.
+      Returns an encrypted MP3 download link that can be used to download the track.
+
+      **Quality Options:**
+      - `MP3_128` - 128 kbps MP3
+      - `MP3_320` - 320 kbps MP3 (default)
+      - `FLAC` - Lossless FLAC audio
+
+      **Authentication:** Requires active `hasod-downloader` subscription.
+    tags: [Download Link Retrieval]
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/metadata.yaml#/DeezerIsrcRequest'
+    responses:
+      '200':
+        description: Download URL retrieved successfully
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/metadata.yaml#/DeezerDownloadUrlResponse'
+      '400':
+        $ref: '../responses/errors.yaml#/BadRequest'
+      '401':
+        $ref: '../responses/errors.yaml#/Unauthorized'
+      '403':
+        description: Subscription required
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ErrorResponse'
+      '404':
+        description: Track not found on Deezer
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ErrorResponse'
+      '500':
+        description: Failed to retrieve download URL
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ErrorResponse'

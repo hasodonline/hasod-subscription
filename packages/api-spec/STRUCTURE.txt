@@ -1,0 +1,58 @@
+packages/api-spec/
+├── openapi.yaml (224 lines)          # Main entry point with $ref to all modules
+│
+├── info.yaml (10 lines)              # API title, version, description, contact
+│
+├── paths/                            # API endpoints organized by feature
+│   ├── services.yaml (34 lines)      # GET /services, GET /services/{id}
+│   ├── subscriptions.yaml (60 lines) # POST /create-subscription, /activate, /webhook
+│   ├── user.yaml (27 lines)          # GET /user/subscription-status
+│   ├── admin.yaml (213 lines)        # All /admin/* endpoints (9 endpoints)
+│   ├── transliteration.yaml (34 lines)   # POST /transliterate
+│   └── metadata.yaml (170 lines)     # /metadata/spotify/*, /download/deezer/isrc
+│
+├── schemas/                          # Type definitions by domain
+│   ├── common.yaml (20 lines)        # ErrorResponse, SuccessResponse
+│   ├── service.yaml (142 lines)      # Service, AdminServiceRequest, etc.
+│   ├── subscription.yaml (147 lines) # SubscriptionStatus, PaymentMethod, etc.
+│   ├── transaction.yaml (116 lines)  # ManualTransaction, ManualPayment
+│   ├── user.yaml (11 lines)          # SubscriptionStatusResponse
+│   ├── metadata.yaml (326 lines)     # Spotify/Deezer/Transliteration types
+│   └── desktop.yaml (257 lines)      # NEW: Desktop app types (9 schemas)
+│       ├── MusicService              # Enum: youtube, spotify, soundcloud, deezer
+│       ├── DownloadStatus            # Enum: pending, downloading, completed, etc.
+│       ├── TrackMetadata             # Track info with ISRC, duration, etc.
+│       ├── DownloadContext           # Album/playlist context
+│       ├── DownloadJob               # Individual download with progress
+│       ├── QueueStatus               # Overall queue stats
+│       ├── LicenseStatus             # Subscription validation
+│       ├── OAuthStartResult          # OAuth flow data
+│       └── StoredAuth                # Local auth storage
+│
+├── responses/                        # Reusable HTTP responses
+│   └── errors.yaml (27 lines)        # 400, 401, 403, 404 responses
+│
+├── MODULAR-STRUCTURE.md              # This documentation
+├── CLAUDE.md                         # Original spec-first workflow guide
+└── openapi.yaml.backup (1,432 lines) # Original monolithic file (backup)
+
+SUMMARY:
+========
+Total files: 16 YAML files
+Total lines: 1,838 lines (excluding backup)
+Average per file: 115 lines
+Main file: 224 lines (84% smaller than original)
+Largest file: metadata.yaml (326 lines)
+Smallest file: user.yaml (11 lines)
+
+API Coverage:
+=============
+✅ 18 API endpoints across 6 path files
+✅ 50+ schema definitions across 7 schema files
+✅ 9 new desktop app types
+✅ All responses, errors, and security schemes
+
+Validation: ✅ PASSING (with 3 warnings)
+Type Generation: ✅ WORKING
+Documentation: ✅ BUILDING
+Backward Compatible: ✅ YES

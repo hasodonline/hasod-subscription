@@ -1,0 +1,147 @@
+SubscriptionStatus:
+  type: string
+  enum: [active, pending, canceled, expired, suspended, none]
+
+PaymentMethod:
+  type: string
+  enum: [paypal, manual]
+
+UserServiceSubscription:
+  type: object
+  required: [status, paymentMethod, updatedAt]
+  properties:
+    status:
+      $ref: '#/SubscriptionStatus'
+    paymentMethod:
+      $ref: '#/PaymentMethod'
+    paypalSubscriptionId:
+      type: string
+    paypalSubscriptionStatus:
+      type: string
+    manualStartDate:
+      type: string
+      format: date-time
+    manualEndDate:
+      type: string
+      format: date-time
+    manualTransactionId:
+      type: string
+    inGoogleGroup:
+      type: boolean
+    activatedAt:
+      type: string
+      format: date-time
+    expiresAt:
+      type: string
+      format: date-time
+    updatedAt:
+      type: string
+      format: date-time
+
+CreateSubscriptionRequest:
+  type: object
+  required: [uid, serviceId]
+  properties:
+    uid:
+      type: string
+      description: Firebase user ID
+    serviceId:
+      type: string
+      description: Service to subscribe to
+
+CreateSubscriptionResponse:
+  type: object
+  required: [approvalUrl, subscriptionId]
+  properties:
+    approvalUrl:
+      type: string
+      format: uri
+      description: PayPal approval URL to redirect user
+    subscription:
+      type: object
+      description: PayPal subscription object
+    subscriptionId:
+      type: string
+
+ActivateSubscriptionRequest:
+  type: object
+  required: [uid, subscriptionId]
+  properties:
+    uid:
+      type: string
+    subscriptionId:
+      type: string
+      description: PayPal subscription ID
+
+ActivateSubscriptionResponse:
+  type: object
+  required: [success, status, serviceId]
+  properties:
+    success:
+      type: boolean
+    status:
+      type: string
+    serviceId:
+      type: string
+    subscription:
+      type: object
+
+PayPalWebhookEvent:
+  type: object
+  properties:
+    id:
+      type: string
+    event_type:
+      type: string
+      examples:
+        - BILLING.SUBSCRIPTION.ACTIVATED
+        - BILLING.SUBSCRIPTION.CANCELLED
+        - BILLING.SUBSCRIPTION.EXPIRED
+        - BILLING.SUBSCRIPTION.SUSPENDED
+    resource:
+      type: object
+      properties:
+        id:
+          type: string
+        status:
+          type: string
+        custom_id:
+          type: string
+
+CancelSubscriptionRequest:
+  type: object
+  required: [uid, serviceId]
+  properties:
+    uid:
+      type: string
+    serviceId:
+      type: string
+    reason:
+      type: string
+
+ManageGroupRequest:
+  type: object
+  required: [uid, serviceId, action]
+  properties:
+    uid:
+      type: string
+    serviceId:
+      type: string
+    action:
+      type: string
+      enum: [add, remove]
+
+MigrationResponse:
+  type: object
+  required: [success, message, migrated, skipped, total]
+  properties:
+    success:
+      type: boolean
+    message:
+      type: string
+    migrated:
+      type: integer
+    skipped:
+      type: integer
+    total:
+      type: integer

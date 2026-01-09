@@ -1,0 +1,257 @@
+# ===========================================================================
+# Desktop App Types
+# ===========================================================================
+# These types are used by the Tauri desktop application for download
+# management, license validation, and OAuth authentication.
+# ===========================================================================
+
+# Supported music services for downloads
+MusicService:
+  type: string
+  enum:
+    - youtube
+    - spotify
+    - soundcloud
+    - deezer
+  description: |
+    Music service identifier:
+    - youtube: YouTube tracks/playlists
+    - spotify: Spotify tracks/albums/playlists (via ISRC lookup)
+    - soundcloud: SoundCloud tracks
+    - deezer: Direct Deezer downloads
+
+# Download status enum
+DownloadStatus:
+  type: string
+  enum:
+    - pending
+    - downloading
+    - processing
+    - completed
+    - failed
+    - cancelled
+  description: |
+    Download job status:
+    - pending: Queued, waiting to start
+    - downloading: Actively downloading
+    - processing: Post-processing (e.g., metadata embedding)
+    - completed: Successfully finished
+    - failed: Error occurred
+    - cancelled: User cancelled
+
+# Track metadata for a download
+TrackMetadata:
+  type: object
+  required:
+    - title
+    - artist
+  properties:
+    title:
+      type: string
+      description: Track title
+      example: "היה טוב"
+    artist:
+      type: string
+      description: Primary artist name
+      example: "Omer Adam"
+    album:
+      type: string
+      description: Album name
+      example: "תסמינים של פרידה"
+    isrc:
+      type: string
+      description: International Standard Recording Code (if available)
+      example: "IL1012501110"
+    duration:
+      type: integer
+      description: Track duration in seconds
+      example: 214
+    releaseDate:
+      type: string
+      description: Release date (ISO format)
+      example: "2025-06-10"
+    imageUrl:
+      type: string
+      format: uri
+      description: Album/track cover art URL
+      example: "https://i.scdn.co/image/ab67616d0000b27312d961970aa13291d9720f8b"
+    trackNumber:
+      type: integer
+      description: Track number in album (if applicable)
+      example: 3
+
+# Download context (album/playlist info)
+DownloadContext:
+  type: object
+  description: Additional context for batch downloads (albums/playlists)
+  properties:
+    type:
+      type: string
+      enum: [single, album, playlist]
+      description: Download type
+    albumName:
+      type: string
+      description: Album name (for album downloads)
+    playlistName:
+      type: string
+      description: Playlist name (for playlist downloads)
+    totalTracks:
+      type: integer
+      description: Total number of tracks in album/playlist
+    currentTrack:
+      type: integer
+      description: Current track number being processed
+
+# Individual download job
+DownloadJob:
+  type: object
+  required:
+    - id
+    - url
+    - service
+    - status
+    - metadata
+    - createdAt
+  properties:
+    id:
+      type: string
+      format: uuid
+      description: Unique job identifier
+      example: "550e8400-e29b-41d4-a716-446655440000"
+    url:
+      type: string
+      format: uri
+      description: Original source URL
+      example: "https://open.spotify.com/track/5omHkj4qY0A8f6mE4T3fAH"
+    service:
+      $ref: '#/MusicService'
+    status:
+      $ref: '#/DownloadStatus'
+    metadata:
+      $ref: '#/TrackMetadata'
+    context:
+      $ref: '#/DownloadContext'
+    progress:
+      type: number
+      minimum: 0
+      maximum: 100
+      description: Download progress percentage
+      example: 75.5
+    outputPath:
+      type: string
+      description: Local file path (when completed)
+      example: "/Users/user/Music/Omer Adam - היה טוב.mp3"
+    errorMessage:
+      type: string
+      description: Error message (if status is 'failed')
+      example: "Track not found on Deezer"
+    createdAt:
+      type: string
+      format: date-time
+      description: Job creation timestamp
+    startedAt:
+      type: string
+      format: date-time
+      description: Download start timestamp
+    completedAt:
+      type: string
+      format: date-time
+      description: Download completion timestamp
+
+# Queue status (for desktop app UI)
+QueueStatus:
+  type: object
+  required:
+    - totalJobs
+    - activeJobs
+    - completedJobs
+    - failedJobs
+    - jobs
+  properties:
+    totalJobs:
+      type: integer
+      description: Total number of jobs in queue
+      example: 10
+    activeJobs:
+      type: integer
+      description: Number of active/downloading jobs
+      example: 2
+    completedJobs:
+      type: integer
+      description: Number of completed jobs
+      example: 7
+    failedJobs:
+      type: integer
+      description: Number of failed jobs
+      example: 1
+    jobs:
+      type: array
+      items:
+        $ref: '#/DownloadJob'
+      description: List of all jobs in queue
+
+# License status (used by desktop app to validate subscription)
+LicenseStatus:
+  type: object
+  required:
+    - valid
+    - email
+  properties:
+    valid:
+      type: boolean
+      description: Whether user has active hasod-downloader subscription
+      example: true
+    email:
+      type: string
+      format: email
+      description: User email
+      example: "user@example.com"
+    expiresAt:
+      type: string
+      format: date-time
+      description: Subscription expiration date (if applicable)
+      example: "2026-12-31T23:59:59Z"
+    subscriptionStatus:
+      $ref: './subscription.yaml#/SubscriptionStatus'
+
+# OAuth authentication result
+OAuthStartResult:
+  type: object
+  required:
+    - authUrl
+    - state
+  properties:
+    authUrl:
+      type: string
+      format: uri
+      description: OAuth authorization URL to open in browser
+      example: "https://accounts.google.com/o/oauth2/v2/auth?client_id=..."
+    state:
+      type: string
+      description: CSRF state parameter for validation
+      example: "random-state-string-12345"
+
+# Stored authentication tokens (local storage)
+StoredAuth:
+  type: object
+  required:
+    - email
+    - idToken
+    - refreshToken
+    - expiresAt
+  properties:
+    email:
+      type: string
+      format: email
+      description: User email
+      example: "user@example.com"
+    idToken:
+      type: string
+      description: Firebase ID token (JWT)
+    refreshToken:
+      type: string
+      description: Firebase refresh token
+    expiresAt:
+      type: string
+      format: date-time
+      description: Token expiration timestamp

@@ -1,0 +1,10 @@
+title: Hasod Subscription API
+version: 1.0.0
+description: |
+  Subscription management API for Hasod services.
+  Handles service catalog, PayPal subscriptions, and manual payments.
+contact:
+  email: hasod@hasodonline.com
+license:
+  name: Proprietary
+  url: https://hasod-41a23.web.app/terms

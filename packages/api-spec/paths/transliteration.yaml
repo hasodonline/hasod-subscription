@@ -1,0 +1,34 @@
+/transliterate:
+  post:
+    operationId: transliterateMedia
+    summary: Transliterate Hebrew media names to English
+    description: |
+      Transliterates song, artist, and album names from Hebrew to English.
+      Uses OpenAI for intelligent transliteration that preserves meaning.
+      Requires user authentication.
+    tags: [Transliteration]
+    security:
+      - bearerAuth: []
+    requestBody:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '../schemas/metadata.yaml#/TransliterateRequest'
+    responses:
+      '200':
+        description: Transliteration successful
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/metadata.yaml#/TransliterateResponse'
+      '400':
+        $ref: '../responses/errors.yaml#/BadRequest'
+      '401':
+        $ref: '../responses/errors.yaml#/Unauthorized'
+      '403':
+        description: Subscription required
+        content:
+          application/json:
+            schema:
+              $ref: '../schemas/common.yaml#/ErrorResponse'
