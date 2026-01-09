@@ -23,6 +23,7 @@ mod auth;
 mod download;
 mod platform;
 mod utils;
+mod commands;
 
 // Import API client
 use api_types::{HasodApiClient, SpotifyTrackMetadata, DeezerQuality};
@@ -79,13 +80,22 @@ const GOOGLE_OAUTH_CLIENT_SECRET: &str = env!("HASOD_GOOGLE_OAUTH_CLIENT_SECRET"
 
 /// Update job status in queue
 fn update_job_status(job_id: &str, status: DownloadStatus, progress: f32, message: &str) {
-    if let Ok(mut queue) = DOWNLOAD_QUEUE.lock() {
-        if let Some(job) = queue.iter_mut().find(|j| j.id == job_id) {
-            job.status = status;
-            job.progress = progress;
-            job.message = message.to_string();
-        }
-    }
+    QueueManager::update_job_status(job_id, status, progress, message);
+}
+
+/// Get queue status (wrapper used by process_download_job)
+fn get_queue_status() -> Result<QueueStatus, String> {
+    QueueManager::get_status()
+}
+
+/// Get queued count (wrapper used by process_download_job)
+fn get_queued_count() -> usize {
+    QueueManager::get_queued_count()
+}
+
+/// Get download directory (wrapper used by start_queue_processing)
+fn get_download_dir() -> String {
+    utils::get_download_dir()
 }
 
 /// Calculate organized output path based on metadata and context
@@ -367,7 +377,7 @@ async fn find_best_youtube_source(
 // ============================================================================
 
 /// Process a single download job - orchestrates service-specific downloads
-async fn process_download_job(
+pub async fn process_download_job(
     app: &AppHandle,
     job_id: String,
     base_output_dir: String,
@@ -948,8 +958,7 @@ async fn process_download_job(
 }
 
 /// Start processing the download queue
-#[tauri::command]
-async fn start_queue_processing(app: AppHandle) -> Result<(), String> {
+pub async fn start_queue_processing(app: AppHandle) -> Result<(), String> {
     // Check if already processing
     {
         let mut processing = QUEUE_PROCESSING
@@ -1010,382 +1019,10 @@ async fn start_queue_processing(app: AppHandle) -> Result<(), String> {
 }
 
 // ============================================================================
-// Tauri Commands - License Management
+// All Tauri Commands Moved to commands.rs
 // ============================================================================
-
-#[tauri::command]
-fn get_device_uuid() -> String {
-    get_or_create_device_uuid()
-}
-
-#[tauri::command]
-fn get_hardware_device_id() -> String {
-    get_hardware_id()
-}
-
-// set_auth_token is replaced by OAuth - keep for backward compatibility
-#[tauri::command]
-fn set_auth_token(token: String) -> Result<(), String> {
-    let uuid = get_or_create_device_uuid();
-    auth::save_auth_token(&token, &uuid);
-    Ok(())
-}
-
-#[tauri::command]
-fn get_registration_url() -> String {
-    let uuid = get_or_create_device_uuid();
-    auth::get_registration_url(&uuid)
-}
-
-#[tauri::command]
-async fn check_license(user_email: Option<String>) -> Result<LicenseStatus, String> {
-    let device_uuid = get_or_create_device_uuid();
-    auth::check_license(user_email, device_uuid).await
-}
-
-#[tauri::command]
-fn start_google_login() -> Result<OAuthStartResult, String> {
-    auth::start_google_login(GOOGLE_OAUTH_CLIENT_ID)
-}
-
-#[tauri::command]
-async fn wait_for_oauth_callback(app: AppHandle) -> Result<String, String> {
-    auth::wait_for_oauth_callback(app).await
-}
-
-#[tauri::command]
-async fn exchange_oauth_code(code: String) -> Result<StoredAuth, String> {
-    auth::exchange_oauth_code(code, GOOGLE_OAUTH_CLIENT_ID, GOOGLE_OAUTH_CLIENT_SECRET, FIREBASE_API_KEY).await
-}
-
-#[tauri::command]
-fn get_stored_auth() -> Option<StoredAuth> {
-    auth::get_stored_auth()
-}
-
-#[tauri::command]
-async fn refresh_auth_token() -> Result<StoredAuth, String> {
-    auth::refresh_auth_token(FIREBASE_API_KEY).await
-}
-
-#[tauri::command]
-fn logout() -> Result<(), String> {
-    auth::logout()
-}
-
-#[tauri::command]
-fn get_download_dir() -> String {
-    utils::get_download_dir()
-}
-
-#[tauri::command]
-fn create_download_dir() -> Result<String, String> {
-    utils::create_download_dir()
-}
-
-// ============================================================================
-// Tauri Commands - Download Queue
-// ============================================================================
-
-#[tauri::command]
-fn add_to_queue(url: String) -> Result<DownloadJob, String> {
-    let job = DownloadJob::new(url);
-    let mut queue = DOWNLOAD_QUEUE
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-    queue.push(job.clone());
-    Ok(job)
-}
-
-#[tauri::command]
-fn add_multiple_to_queue(urls: Vec<String>) -> Result<Vec<DownloadJob>, String> {
-    let mut jobs = Vec::new();
-    let mut queue = DOWNLOAD_QUEUE
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-
-    for url in urls {
-        let job = DownloadJob::new(url);
-        queue.push(job.clone());
-        jobs.push(job);
-    }
-
-    Ok(jobs)
-}
-
-#[tauri::command]
-async fn add_spotify_album_to_queue(album_url: String) -> Result<Vec<DownloadJob>, String> {
-    println!("[Album] Processing Spotify album: {}", album_url);
-
-    // Get album metadata from backend API
-    let api_client = HasodApiClient::production();
-    let album_metadata = api_client.get_spotify_album_metadata(&album_url).await?;
-
-    println!("[Album] Album: '{}' by '{}' ({} tracks)",
-             album_metadata.album.name,
-             album_metadata.album.artist,
-             album_metadata.tracks.len());
-
-    let mut jobs = Vec::new();
-    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
-
-    let album_context = DownloadContext::Album(album_metadata.album.name.clone());
-
-    for track in album_metadata.tracks {
-        let track_url = format!("https://open.spotify.com/track/{}", track.track_id);
-        let mut job = DownloadJob::new(track_url);
-
-        job.metadata = TrackMetadata {
-            title: track.name,
-            artist: track.artists,
-            album: track.album,
-            duration: Some((track.duration_ms / 1000) as u32),
-            thumbnail: Some(track.image_url),
-        };
-        job.download_context = Some(album_context.clone());
-
-        queue.push(job.clone());
-        jobs.push(job);
-    }
-
-    println!("[Album] ✅ Queued {} tracks from album", jobs.len());
-    Ok(jobs)
-}
-
-#[tauri::command]
-async fn add_spotify_playlist_to_queue(playlist_url: String) -> Result<Vec<DownloadJob>, String> {
-    println!("[Playlist] Processing Spotify playlist: {}", playlist_url);
-
-    // Get playlist metadata from backend API
-    let api_client = HasodApiClient::production();
-    let playlist_metadata = api_client.get_spotify_playlist_metadata(&playlist_url).await?;
-
-    println!("[Playlist] Playlist: '{}' by '{}' ({} tracks)",
-             playlist_metadata.playlist.name,
-             playlist_metadata.playlist.owner,
-             playlist_metadata.tracks.len());
-
-    let mut jobs = Vec::new();
-    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
-
-    let playlist_context = DownloadContext::Playlist(playlist_metadata.playlist.name.clone());
-
-    for track in playlist_metadata.tracks {
-        let track_url = format!("https://open.spotify.com/track/{}", track.track_id);
-        let mut job = DownloadJob::new(track_url);
-
-        job.metadata = TrackMetadata {
-            title: track.name,
-            artist: track.artists,
-            album: track.album,
-            duration: Some((track.duration_ms / 1000) as u32),
-            thumbnail: Some(track.image_url),
-        };
-        job.download_context = Some(playlist_context.clone());
-
-        queue.push(job.clone());
-        jobs.push(job);
-    }
-
-    println!("[Playlist] ✅ Queued {} tracks from playlist", jobs.len());
-    Ok(jobs)
-}
-
-#[tauri::command]
-async fn add_youtube_playlist_to_queue(
-    app: AppHandle,
-    playlist_url: String,
-) -> Result<Vec<DownloadJob>, String> {
-    // Use YouTube service to extract playlist
-    let (playlist_name, video_urls) = YouTubeDownloader::extract_playlist_urls(&app, &playlist_url).await?;
-
-    let mut jobs = Vec::new();
-    let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
-
-    let playlist_context = DownloadContext::Playlist(playlist_name.clone());
-
-    for video_url in video_urls {
-        let mut job = DownloadJob::new(video_url);
-        job.download_context = Some(playlist_context.clone());
-        queue.push(job.clone());
-        jobs.push(job);
-    }
-
-    println!("[YouTube Playlist] ✅ Queued {} videos from playlist", jobs.len());
-    Ok(jobs)
-}
-
-#[tauri::command]
-fn get_queue_status() -> Result<QueueStatus, String> {
-    let queue = DOWNLOAD_QUEUE
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-
-    let active_count = queue
-        .iter()
-        .filter(|j| {
-            j.status == DownloadStatus::Downloading || j.status == DownloadStatus::Converting
-        })
-        .count();
-    let queued_count = queue
-        .iter()
-        .filter(|j| j.status == DownloadStatus::Queued)
-        .count();
-    let completed_count = queue
-        .iter()
-        .filter(|j| j.status == DownloadStatus::Complete)
-        .count();
-    let error_count = queue
-        .iter()
-        .filter(|j| j.status == DownloadStatus::Error)
-        .count();
-
-    let is_processing = QUEUE_PROCESSING.lock().map(|p| *p).unwrap_or(false);
-
-    Ok(QueueStatus {
-        jobs: queue.clone(),
-        active_count,
-        queued_count,
-        completed_count,
-        error_count,
-        is_processing,
-    })
-}
-
-#[tauri::command]
-fn clear_completed_jobs() -> Result<usize, String> {
-    let mut queue = DOWNLOAD_QUEUE
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-    let before_count = queue.len();
-    queue.retain(|j| j.status != DownloadStatus::Complete);
-    Ok(before_count - queue.len())
-}
-
-#[tauri::command]
-fn remove_from_queue(job_id: String) -> Result<bool, String> {
-    let mut queue = DOWNLOAD_QUEUE
-        .lock()
-        .map_err(|e| format!("Lock error: {}", e))?;
-    if let Some(pos) = queue.iter().position(|j| j.id == job_id) {
-        queue.remove(pos);
-        Ok(true)
-    } else {
-        Ok(false)
-    }
-}
-
-// ============================================================================
-// Tauri Commands - Legacy Download Commands (now use queue)
-// ============================================================================
-
-#[tauri::command]
-async fn download_youtube(app: AppHandle, url: String, _output_dir: String) -> Result<String, String> {
-    let job = add_to_queue(url)?;
-    start_queue_processing(app).await?;
-    Ok(format!("Added to queue: {}", job.id))
-}
-
-#[tauri::command]
-async fn download_spotify(app: AppHandle, url: String, _output_dir: String) -> Result<String, String> {
-    let job = add_to_queue(url)?;
-    start_queue_processing(app).await?;
-    Ok(format!("Added to queue: {}", job.id))
-}
-
-// ============================================================================
-// Tauri Commands - Platform-Specific (Floating Window, Clipboard)
-// ============================================================================
-
-#[tauri::command]
-fn handle_dropped_link(url: String) -> Result<String, String> {
-    println!("[DragDrop] Received dropped link: {}", url);
-
-    // Validate URL format
-    if !url.starts_with("http://") && !url.starts_with("https://") {
-        return Err("Invalid URL format".to_string());
-    }
-
-    // Detect service
-    let service = MusicService::from_url(&url);
-    println!("[DragDrop] Detected service: {}", service.display_name());
-
-    // Add to queue
-    let job = add_to_queue(url.clone())?;
-
-    Ok(format!(
-        "Added {} link to queue: {}",
-        service.display_name(),
-        job.id
-    ))
-}
-
-#[cfg(target_os = "macos")]
-#[tauri::command]
-fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
-    use platform::FloatingPanelManager;
-    FloatingPanelManager::toggle(app)
-}
-
-#[cfg(not(target_os = "macos"))]
-#[tauri::command]
-fn toggle_floating_window(_app: AppHandle) -> Result<(), String> {
-    Err("Floating window is only supported on macOS".to_string())
-}
-
-#[cfg(target_os = "macos")]
-#[tauri::command]
-fn is_floating_window_open(_app: AppHandle) -> bool {
-    use platform::FloatingPanelManager;
-    FloatingPanelManager::is_open()
-}
-
-#[cfg(not(target_os = "macos"))]
-#[tauri::command]
-fn is_floating_window_open(_app: AppHandle) -> bool {
-    false
-}
-
-#[cfg(target_os = "macos")]
-#[tauri::command]
-async fn get_clipboard_url() -> Result<String, String> {
-    use platform::ClipboardManager;
-    ClipboardManager::get_url().await
-}
-
-#[cfg(target_os = "windows")]
-#[tauri::command]
-async fn get_clipboard_url() -> Result<String, String> {
-    use std::process::Command;
-    let output = Command::new("powershell")
-        .args(["-command", "Get-Clipboard"])
-        .output()
-        .map_err(|e| format!("Failed to read clipboard: {}", e))?;
-
-    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if text.starts_with("http://") || text.starts_with("https://") {
-        return Ok(text);
-    }
-    Err("Clipboard does not contain a valid URL".to_string())
-}
-
-#[cfg(target_os = "linux")]
-#[tauri::command]
-async fn get_clipboard_url() -> Result<String, String> {
-    use std::process::Command;
-    let output = Command::new("xclip")
-        .args(["-selection", "clipboard", "-o"])
-        .output()
-        .map_err(|e| format!("Failed to read clipboard: {}", e))?;
-
-    let text = String::from_utf8_lossy(&output.stdout).trim().to_string();
-
-    if text.starts_with("http://") || text.starts_with("https://") {
-        return Ok(text);
-    }
-    Err("Clipboard does not contain a valid URL".to_string())
-}
+// Commands include: License management, OAuth, Download queue, Platform-specific
+// See commands.rs for all #[tauri::command] implementations
 
 // ============================================================================
 // Main Application
@@ -1430,7 +1067,7 @@ pub fn run() {
                         }
                     }
                     "toggle_floating" => {
-                        let _ = toggle_floating_window(app.clone());
+                        let _ = commands::toggle_floating_window(app.clone());
                     }
                     "quit" => {
                         app.exit(0);
@@ -1458,38 +1095,38 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             // License management
-            get_device_uuid,
-            get_hardware_device_id,
-            get_registration_url,
-            set_auth_token,
-            check_license,
+            commands::get_device_uuid,
+            commands::get_hardware_device_id,
+            commands::get_registration_url,
+            commands::set_auth_token,
+            commands::check_license,
             // OAuth 2.0
-            start_google_login,
-            wait_for_oauth_callback,
-            exchange_oauth_code,
-            get_stored_auth,
-            refresh_auth_token,
-            logout,
+            commands::start_google_login,
+            commands::wait_for_oauth_callback,
+            commands::exchange_oauth_code,
+            commands::get_stored_auth,
+            commands::refresh_auth_token,
+            commands::logout,
             // Download queue
-            add_to_queue,
-            add_multiple_to_queue,
-            add_spotify_album_to_queue,
-            add_spotify_playlist_to_queue,
-            add_youtube_playlist_to_queue,
-            get_queue_status,
-            clear_completed_jobs,
-            remove_from_queue,
-            start_queue_processing,
+            commands::add_to_queue,
+            commands::add_multiple_to_queue,
+            commands::add_spotify_album_to_queue,
+            commands::add_spotify_playlist_to_queue,
+            commands::add_youtube_playlist_to_queue,
+            commands::get_queue_status,
+            commands::clear_completed_jobs,
+            commands::remove_from_queue,
+            commands::start_queue_processing,
             // Legacy download commands
-            download_youtube,
-            download_spotify,
-            get_download_dir,
-            create_download_dir,
+            commands::download_youtube,
+            commands::download_spotify,
+            commands::get_download_dir,
+            commands::create_download_dir,
             // Platform-specific
-            toggle_floating_window,
-            is_floating_window_open,
-            get_clipboard_url,
-            handle_dropped_link,
+            commands::toggle_floating_window,
+            commands::is_floating_window_open,
+            commands::get_clipboard_url,
+            commands::handle_dropped_link,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
