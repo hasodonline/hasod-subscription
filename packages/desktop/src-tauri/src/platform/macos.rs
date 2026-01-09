@@ -217,24 +217,21 @@ impl FloatingPanelManager {
                 return Err("Failed to create NSPanel".to_string());
             }
 
-            // Configure panel to float above fullscreen apps
-            let _: () = msg_send![panel, setLevel: 1025i64]; // NSPopUpMenuWindowLevel (1025)
-            let _: () = msg_send![panel, setFloatingPanel: YES];
-            let _: () = msg_send![panel, setBecomesKeyOnlyIfNeeded: YES];
-            let _: () = msg_send![panel, setWorksWhenModal: YES];
-
-            // NSWindowCollectionBehaviorCanJoinAllSpaces = 1 << 0
-            // NSWindowCollectionBehaviorStationary = 1 << 4  
-            // NSWindowCollectionBehaviorFullScreenAuxiliary = 1 << 8
-            let collection_behavior: u64 = (1 << 0) | (1 << 4) | (1 << 8);
+            // Set collection behavior: CanJoinAllSpaces | FullScreenAuxiliary
+            // Bit 0 = CanJoinAllSpaces
+            // Bit 8 = FullScreenAuxiliary
+            let collection_behavior: u64 = (1 << 0) | (1 << 8);
             let _: () = msg_send![panel, setCollectionBehavior: collection_behavior];
 
-            let _: () = msg_send![panel, setBackgroundColor: nil];
-            let _: () = msg_send![panel, setOpaque: NO];
-            let _: () = msg_send![panel, setHasShadow: YES];
-            let _: () = msg_send![panel, setAlphaValue: 1.0f64];
-            let _: () = msg_send![panel, setMovableByWindowBackground: NO];
+            // Panel settings
             let _: () = msg_send![panel, setHidesOnDeactivate: NO];
+            let _: () = msg_send![panel, setWorksWhenModal: YES];
+            let _: () = msg_send![panel, setMovableByWindowBackground: YES]; // Enable dragging!
+
+            // Make transparent background
+            let _: () = msg_send![panel, setOpaque: NO];
+            let clear_color: id = msg_send![class!(NSColor), clearColor];
+            let _: () = msg_send![panel, setBackgroundColor: clear_color];
 
             // Create WKWebView
             let webview_config_class = class!(WKWebViewConfiguration);
@@ -246,12 +243,12 @@ impl FloatingPanelManager {
             // Register message handlers for JS communication
             let url_handler_class = create_url_handler_class();
             let url_handler: id = msg_send![url_handler_class, new];
-            let url_drop_name = NSString::alloc(nil).init_str("urlDrop");
+            let url_drop_name = NSString::alloc(nil).init_str("urlDropped"); // Match JS handler name!
             let _: () = msg_send![user_content_controller, addScriptMessageHandler:url_handler name:url_drop_name];
 
             let drag_handler_class = create_drag_handler_class();
             let drag_handler: id = msg_send![drag_handler_class, new];
-            let drag_name = NSString::alloc(nil).init_str("dragWindow");
+            let drag_name = NSString::alloc(nil).init_str("moveWindow"); // Match JS handler name!
             let _: () = msg_send![user_content_controller, addScriptMessageHandler:drag_handler name:drag_name];
 
             // Create WKWebView
@@ -265,28 +262,42 @@ impl FloatingPanelManager {
             }
 
             // Configure webview for transparency - use NSNumber to wrap boolean
-            let no_value: id = msg_send![class!(NSNumber), numberWithBool:NO];
-            let draws_bg_key = NSString::alloc(nil).init_str("drawsBackground");
-            let _: () = msg_send![webview, setValue:no_value forKey:draws_bg_key];
+            let false_value: id = msg_send![class!(NSNumber), numberWithBool:NO];
+            let _: () = msg_send![webview, setValue:false_value forKey:NSString::alloc(nil).init_str("drawsBackground")];
 
-            // Load HTML content (inline to avoid file path issues)
+            // Set autoresizing mask (NSViewWidthSizable | NSViewHeightSizable = 18)
+            let _: () = msg_send![webview, setAutoresizingMask: 18u64];
+
+            // Load HTML content
             let html_content = Self::get_html_content();
             let html_ns_string = NSString::alloc(nil).init_str(&html_content);
             let base_url: id = nil;
             let _: () = msg_send![webview, loadHTMLString:html_ns_string baseURL:base_url];
 
-            // Set webview as panel content
+            // Add webview to panel
             let _: () = msg_send![panel, setContentView: webview];
 
-            // Show the panel
+            // Show the panel first
             let _: () = msg_send![panel, orderFront: nil];
             let _: () = msg_send![panel, makeKeyAndOrderFront: nil];
+
+            // Set level AFTER showing (25 = NSFloatingWindowLevel)
+            let _: () = msg_send![panel, setLevel: 25i64];
+
+            // Verify level was set correctly
+            let level: i64 = msg_send![panel, level];
+            println!("[FloatingPanel] Panel level: {}", level);
+            if level != 25 {
+                println!("[FloatingPanel] Level didn't stick, retrying...");
+                let _: () = msg_send![panel, setLevel: 25i64];
+                let _: () = msg_send![panel, orderFront: nil];
+            }
 
             // Store panel and webview references
             *FLOATING_PANEL.lock().map_err(|e| format!("Lock error: {}", e))? = Some(panel as usize);
             *FLOATING_WEBVIEW.lock().map_err(|e| format!("Lock error: {}", e))? = Some(webview as usize);
 
-            println!("[FloatingPanel] Native NSPanel created successfully!");
+            println!("[FloatingPanel] Native NSPanel created with original appearance!");
         }
 
         Ok(())
