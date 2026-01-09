@@ -928,24 +928,27 @@ export interface components {
         };
         /**
          * @description Music service identifier:
-         *     - youtube: YouTube tracks/playlists
-         *     - spotify: Spotify tracks/albums/playlists (via ISRC lookup)
-         *     - soundcloud: SoundCloud tracks
-         *     - deezer: Direct Deezer downloads
+         *     - YouTube: YouTube tracks/playlists
+         *     - Spotify: Spotify tracks/albums/playlists (via ISRC lookup)
+         *     - SoundCloud: SoundCloud tracks
+         *     - Deezer: Direct Deezer downloads
+         *     - Tidal: Tidal tracks
+         *     - AppleMusic: Apple Music tracks
+         *     - Bandcamp: Bandcamp releases
+         *     - Unknown: Unrecognized service
          * @enum {string}
          */
-        MusicService: "youtube" | "spotify" | "soundcloud" | "deezer";
+        MusicService: "YouTube" | "Spotify" | "SoundCloud" | "Deezer" | "Tidal" | "AppleMusic" | "Bandcamp" | "Unknown";
         /**
          * @description Download job status:
-         *     - pending: Queued, waiting to start
-         *     - downloading: Actively downloading
-         *     - processing: Post-processing (e.g., metadata embedding)
-         *     - completed: Successfully finished
-         *     - failed: Error occurred
-         *     - cancelled: User cancelled
+         *     - Queued: Waiting to start
+         *     - Downloading: Actively downloading
+         *     - Converting: Converting/processing audio
+         *     - Complete: Successfully finished
+         *     - Error: Failed with error
          * @enum {string}
          */
-        DownloadStatus: "pending" | "downloading" | "processing" | "completed" | "failed" | "cancelled";
+        DownloadStatus: "Queued" | "Downloading" | "Converting" | "Complete" | "Error";
         TrackMetadata: {
             /**
              * @description Track title
@@ -1020,82 +1023,111 @@ export interface components {
             url: string;
             service: components["schemas"]["MusicService"];
             status: components["schemas"]["DownloadStatus"];
-            metadata: components["schemas"]["TrackMetadata"];
-            context?: components["schemas"]["DownloadContext"];
             /**
-             * @description Download progress percentage
+             * @description Download progress percentage (0.0 to 100.0)
              * @example 75.5
              */
-            progress?: number;
+            progress: number;
+            /**
+             * @description Current status message
+             * @example Downloading... 75.5%
+             */
+            message: string;
+            metadata: components["schemas"]["TrackMetadata"];
             /**
              * @description Local file path (when completed)
              * @example /Users/user/Music/Omer Adam - היה טוב.mp3
              */
-            outputPath?: string;
+            output_path?: string;
             /**
-             * @description Error message (if status is 'failed')
+             * @description Error message (if status is Error)
              * @example Track not found on Deezer
              */
-            errorMessage?: string;
+            error?: string;
             /**
-             * Format: date-time
-             * @description Job creation timestamp
+             * @description Job creation timestamp (Unix timestamp)
+             * @example 1704722400
              */
-            createdAt: string;
+            created_at: number;
             /**
-             * Format: date-time
-             * @description Download start timestamp
+             * @description Download start timestamp (Unix timestamp)
+             * @example 1704722405
              */
-            startedAt?: string;
+            started_at?: number;
             /**
-             * Format: date-time
-             * @description Download completion timestamp
+             * @description Download completion timestamp (Unix timestamp)
+             * @example 1704722450
              */
-            completedAt?: string;
+            completed_at?: number;
         };
         QueueStatus: {
-            /**
-             * @description Total number of jobs in queue
-             * @example 10
-             */
-            totalJobs: number;
+            /** @description List of all jobs in queue */
+            jobs: components["schemas"]["DownloadJob"][];
             /**
              * @description Number of active/downloading jobs
              * @example 2
              */
-            activeJobs: number;
+            active_count: number;
+            /**
+             * @description Number of queued jobs waiting to start
+             * @example 3
+             */
+            queued_count: number;
             /**
              * @description Number of completed jobs
              * @example 7
              */
-            completedJobs: number;
+            completed_count: number;
             /**
              * @description Number of failed jobs
              * @example 1
              */
-            failedJobs: number;
-            /** @description List of all jobs in queue */
-            jobs: components["schemas"]["DownloadJob"][];
+            error_count: number;
+            /**
+             * @description Whether queue processor is currently running
+             * @example true
+             */
+            is_processing: boolean;
         };
         LicenseStatus: {
             /**
              * @description Whether user has active hasod-downloader subscription
              * @example true
              */
-            valid: boolean;
+            is_valid: boolean;
+            /**
+             * @description License status
+             * @example registered
+             * @enum {string}
+             */
+            status: "registered" | "not_registered" | "expired" | "suspended" | "error";
+            /**
+             * @description Device UUID
+             * @example 550e8400-e29b-41d4-a716-446655440000
+             */
+            uuid: string;
             /**
              * Format: email
              * @description User email
              * @example user@example.com
              */
-            email: string;
+            email?: string;
             /**
-             * Format: date-time
-             * @description Subscription expiration date (if applicable)
-             * @example 2026-12-31T23:59:59Z
+             * Format: uri
+             * @description Registration URL (if not registered)
+             * @example https://hasod-41a23.web.app/subscriptions?device_uuid=xxx
              */
-            expiresAt?: string;
-            subscriptionStatus?: components["schemas"]["SubscriptionStatus"];
+            registration_url?: string;
+            /**
+             * @description Subscription expiration date
+             * @example 2026-12-31
+             */
+            expires_at?: string;
+            /**
+             * @description Error message (if status is error)
+             * @example Network error
+             */
+            error?: string;
         };
         OAuthStartResult: {
             /**
@@ -1103,7 +1135,7 @@ export interface components {
              * @description OAuth authorization URL to open in browser
              * @example https://accounts.google.com/o/oauth2/v2/auth?client_id=...
              */
-            authUrl: string;
+            auth_url: string;
             /**
              * @description CSRF state parameter for validation
              * @example random-state-string-12345
@@ -1118,14 +1150,19 @@ export interface components {
              */
             email: string;
             /** @description Firebase ID token (JWT) */
-            idToken: string;
+            id_token: string;
             /** @description Firebase refresh token */
-            refreshToken: string;
+            refresh_token: string;
             /**
-             * Format: date-time
-             * @description Token expiration timestamp
+             * @description Token expiration timestamp (Unix timestamp)
+             * @example 1704722400
              */
-            expiresAt: string;
+            expires_at: number;
+            /**
+             * @description Device identifier
+             * @example hw-1234567890abcdef
+             */
+            device_id: string;
         };
     };
     responses: {

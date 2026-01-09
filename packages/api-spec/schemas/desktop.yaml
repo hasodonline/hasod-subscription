@@ -5,39 +5,45 @@
 # management, license validation, and OAuth authentication.
 # ===========================================================================
 
-# Supported music services for downloads
+# Supported music services for downloads (matches Rust serialization - PascalCase)
 MusicService:
   type: string
   enum:
-    - youtube
-    - spotify
-    - soundcloud
-    - deezer
+    - YouTube
+    - Spotify
+    - SoundCloud
+    - Deezer
+    - Tidal
+    - AppleMusic
+    - Bandcamp
+    - Unknown
   description: |
     Music service identifier:
-    - youtube: YouTube tracks/playlists
-    - spotify: Spotify tracks/albums/playlists (via ISRC lookup)
-    - soundcloud: SoundCloud tracks
-    - deezer: Direct Deezer downloads
+    - YouTube: YouTube tracks/playlists
+    - Spotify: Spotify tracks/albums/playlists (via ISRC lookup)
+    - SoundCloud: SoundCloud tracks
+    - Deezer: Direct Deezer downloads
+    - Tidal: Tidal tracks
+    - AppleMusic: Apple Music tracks
+    - Bandcamp: Bandcamp releases
+    - Unknown: Unrecognized service
 
-# Download status enum
+# Download status enum (matches Rust serialization - PascalCase)
 DownloadStatus:
   type: string
   enum:
-    - pending
-    - downloading
-    - processing
-    - completed
-    - failed
-    - cancelled
+    - Queued
+    - Downloading
+    - Converting
+    - Complete
+    - Error
   description: |
     Download job status:
-    - pending: Queued, waiting to start
-    - downloading: Actively downloading
-    - processing: Post-processing (e.g., metadata embedding)
-    - completed: Successfully finished
-    - failed: Error occurred
-    - cancelled: User cancelled
+    - Queued: Waiting to start
+    - Downloading: Actively downloading
+    - Converting: Converting/processing audio
+    - Complete: Successfully finished
+    - Error: Failed with error
 
 # Track metadata for a download
 TrackMetadata:
@@ -110,8 +116,10 @@ DownloadJob:
     - url
     - service
     - status
+    - progress
+    - message
     - metadata
-    - createdAt
+    - created_at
   properties:
     id:
       type: string
@@ -127,101 +135,125 @@ DownloadJob:
       $ref: '#/MusicService'
     status:
       $ref: '#/DownloadStatus'
-    metadata:
-      $ref: '#/TrackMetadata'
-    context:
-      $ref: '#/DownloadContext'
     progress:
       type: number
       minimum: 0
       maximum: 100
-      description: Download progress percentage
+      description: Download progress percentage (0.0 to 100.0)
       example: 75.5
-    outputPath:
+    message:
+      type: string
+      description: Current status message
+      example: "Downloading... 75.5%"
+    metadata:
+      $ref: '#/TrackMetadata'
+    output_path:
       type: string
       description: Local file path (when completed)
       example: "/Users/user/Music/Omer Adam - היה טוב.mp3"
-    errorMessage:
+    error:
       type: string
-      description: Error message (if status is 'failed')
+      description: Error message (if status is Error)
       example: "Track not found on Deezer"
-    createdAt:
-      type: string
-      format: date-time
-      description: Job creation timestamp
-    startedAt:
-      type: string
-      format: date-time
-      description: Download start timestamp
-    completedAt:
-      type: string
-      format: date-time
-      description: Download completion timestamp
+    created_at:
+      type: integer
+      description: Job creation timestamp (Unix timestamp)
+      example: 1704722400
+    started_at:
+      type: integer
+      description: Download start timestamp (Unix timestamp)
+      example: 1704722405
+    completed_at:
+      type: integer
+      description: Download completion timestamp (Unix timestamp)
+      example: 1704722450
 
 # Queue status (for desktop app UI)
 QueueStatus:
   type: object
   required:
-    - totalJobs
-    - activeJobs
-    - completedJobs
-    - failedJobs
     - jobs
+    - active_count
+    - queued_count
+    - completed_count
+    - error_count
+    - is_processing
   properties:
-    totalJobs:
-      type: integer
-      description: Total number of jobs in queue
-      example: 10
-    activeJobs:
-      type: integer
-      description: Number of active/downloading jobs
-      example: 2
-    completedJobs:
-      type: integer
-      description: Number of completed jobs
-      example: 7
-    failedJobs:
-      type: integer
-      description: Number of failed jobs
-      example: 1
     jobs:
       type: array
       items:
         $ref: '#/DownloadJob'
       description: List of all jobs in queue
+    active_count:
+      type: integer
+      description: Number of active/downloading jobs
+      example: 2
+    queued_count:
+      type: integer
+      description: Number of queued jobs waiting to start
+      example: 3
+    completed_count:
+      type: integer
+      description: Number of completed jobs
+      example: 7
+    error_count:
+      type: integer
+      description: Number of failed jobs
+      example: 1
+    is_processing:
+      type: boolean
+      description: Whether queue processor is currently running
+      example: true
 
 # License status (used by desktop app to validate subscription)
+# Field names match Rust snake_case serialization
 LicenseStatus:
   type: object
   required:
-    - valid
-    - email
+    - is_valid
+    - status
+    - uuid
   properties:
-    valid:
+    is_valid:
       type: boolean
       description: Whether user has active hasod-downloader subscription
       example: true
+    status:
+      type: string
+      enum: [registered, not_registered, expired, suspended, error]
+      description: License status
+      example: "registered"
+    uuid:
+      type: string
+      description: Device UUID
+      example: "550e8400-e29b-41d4-a716-446655440000"
     email:
       type: string
       format: email
       description: User email
       example: "user@example.com"
-    expiresAt:
+    registration_url:
       type: string
-      format: date-time
-      description: Subscription expiration date (if applicable)
-      example: "2026-12-31T23:59:59Z"
-    subscriptionStatus:
-      $ref: './subscription.yaml#/SubscriptionStatus'
+      format: uri
+      description: Registration URL (if not registered)
+      example: "https://hasod-41a23.web.app/subscriptions?device_uuid=xxx"
+    expires_at:
+      type: string
+      description: Subscription expiration date
+      example: "2026-12-31"
+    error:
+      type: string
+      description: Error message (if status is error)
+      example: "Network error"
 
-# OAuth authentication result
+# OAuth authentication result (matches Rust snake_case serialization)
 OAuthStartResult:
   type: object
   required:
-    - authUrl
+    - auth_url
     - state
   properties:
-    authUrl:
+    auth_url:
       type: string
       format: uri
       description: OAuth authorization URL to open in browser
@@ -231,27 +263,32 @@ OAuthStartResult:
       description: CSRF state parameter for validation
       example: "random-state-string-12345"
 
-# Stored authentication tokens (local storage)
+# Stored authentication tokens (matches Rust snake_case serialization)
 StoredAuth:
   type: object
   required:
     - email
-    - idToken
-    - refreshToken
-    - expiresAt
+    - id_token
+    - refresh_token
+    - expires_at
+    - device_id
   properties:
     email:
       type: string
       format: email
       description: User email
       example: "user@example.com"
-    idToken:
+    id_token:
       type: string
       description: Firebase ID token (JWT)
-    refreshToken:
+    refresh_token:
       type: string
       description: Firebase refresh token
-    expiresAt:
+    expires_at:
+      type: integer
+      description: Token expiration timestamp (Unix timestamp)
+      example: 1704722400
+    device_id:
       type: string
-      format: date-time
-      description: Token expiration timestamp
+      description: Device identifier
+      example: "hw-1234567890abcdef"

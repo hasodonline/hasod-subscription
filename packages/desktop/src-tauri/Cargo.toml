@@ -45,9 +45,9 @@ cbc = "0.1"
 cipher = "0.4"
 md-5 = "0.10"
 
-# TypeScript type generation
-specta = { version = "2", features = ["export"] }
-tauri-specta = { version = "2", features = ["typescript"] }
+# Note: Type generation handled via OpenAPI spec → TypeScript
+# See packages/api-spec/schemas/desktop.yaml for desktop types
+# Generate with: cd packages/api-spec && npm run generate:ts
 
 # macOS native window APIs
 [target.'cfg(target_os = "macos")'.dependencies]

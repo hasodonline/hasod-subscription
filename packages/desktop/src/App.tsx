@@ -1,65 +1,18 @@
 import { useState, useEffect } from 'react';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke } from '@tauri-apps/api/core'; // Still needed for plugin calls
 import { listen } from '@tauri-apps/api/event';
 import { useLanguage } from './i18n';
 import LanguageSwitcher from './components/LanguageSwitcher';
 import './App.css';
 
-interface LicenseStatus {
-  is_valid: boolean;
-  status: string;
-  uuid: string;
-  email?: string;
-  registration_url?: string;
-  expires_at?: string;
-  error?: string;
-}
-
-interface StoredAuth {
-  email: string;
-  id_token: string;
-  refresh_token: string;
-  expires_at: number;
-  device_id: string;
-}
-
-interface OAuthStartResult {
-  auth_url: string;
-  state: string;
-}
-
-// Queue types matching Rust backend
-interface TrackMetadata {
-  title: string;
-  artist: string;
-  album: string;
-  duration?: number;
-  thumbnail?: string;
-}
-
-interface DownloadJob {
-  id: string;
-  url: string;
-  service: string;
-  status: string;
-  progress: number;
-  message: string;
-  metadata: TrackMetadata;
-  output_path?: string;
-  created_at: number;
-  started_at?: number;
-  completed_at?: number;
-  error?: string;
-}
-
-interface QueueStatus {
-  jobs: DownloadJob[];
-  active_count: number;
-  queued_count: number;
-  completed_count: number;
-  error_count: number;
-  is_processing: boolean;
-}
+// Import type-safe API client and types from OpenAPI spec
+import api from './api/tauri';
+import type {
+  LicenseStatus,
+  StoredAuth,
+  DownloadJob,
+  QueueStatus,
+} from './api/tauri';
 
 // Service icons and colors
 const serviceStyles: Record<string, { icon: string; color: string; name: string }> = {
@@ -89,9 +42,9 @@ function App() {
   // Open floating window on app start
   const openFloatingWindow = async () => {
     try {
-      const isOpen = await invoke<boolean>('is_floating_window_open');
+      const isOpen = await api.platform.isFloatingWindowOpen();
       if (!isOpen) {
-        await invoke('toggle_floating_window');
+        await api.platform.toggleFloatingWindow();
       }
       setFloatingOpen(true);
     } catch (error) {
@@ -101,8 +54,8 @@ function App() {
 
   const toggleFloatingWindow = async () => {
     try {
-      await invoke('toggle_floating_window');
-      const isOpen = await invoke<boolean>('is_floating_window_open');
+      await api.platform.toggleFloatingWindow();
+      const isOpen = await api.platform.isFloatingWindowOpen();
       setFloatingOpen(isOpen);
     } catch (error) {
       console.error('Failed to toggle floating window:', error);
@@ -122,24 +75,24 @@ function App() {
       // Detect if URL is a Spotify album
       if (url.includes('spotify.com/album') || url.startsWith('spotify:album:')) {
         console.log('[App] Detected Spotify album, fetching tracks...');
-        await invoke('add_spotify_album_to_queue', { albumUrl: url });
+        await api.queue.addSpotifyAlbum(url);
       }
       // Detect if URL is a Spotify playlist
       else if (url.includes('spotify.com/playlist') || url.startsWith('spotify:playlist:')) {
         console.log('[App] Detected Spotify playlist, fetching tracks...');
-        await invoke('add_spotify_playlist_to_queue', { playlistUrl: url });
+        await api.queue.addSpotifyPlaylist(url);
       }
       // Detect if URL is a YouTube playlist
       else if (url.includes('youtube.com') && url.includes('list=')) {
         console.log('[App] Detected YouTube playlist, extracting videos...');
-        await invoke('add_youtube_playlist_to_queue', { playlistUrl: url });
+        await api.queue.addYoutubePlaylist(url);
       }
       else {
-        await invoke('add_to_queue', { url });
+        await api.queue.addToQueue(url);
       }
 
-      await invoke('start_queue_processing');
-      const status = await invoke<QueueStatus>('get_queue_status');
+      await api.queue.startProcessing();
+      const status = await api.queue.getQueueStatus();
       setQueueStatus(status);
     } catch (error) {
       console.error('[App] Failed to add to queue:', error);
@@ -172,7 +125,7 @@ function App() {
     });
 
     // Load initial queue status
-    invoke<QueueStatus>('get_queue_status').then(setQueueStatus).catch(console.error);
+    api.queue.getQueueStatus().then(setQueueStatus).catch(console.error);
 
     // Open floating window by default when license is valid
     if (licenseStatus?.is_valid) {
@@ -189,7 +142,7 @@ function App() {
   const initializeAuth = async () => {
     setLoading(true);
     try {
-      const auth = await invoke<StoredAuth | null>('get_stored_auth');
+      const auth = await api.auth.getStoredAuth();
 
       if (auth) {
         console.log('Found stored auth for:', auth.email);
@@ -197,12 +150,12 @@ function App() {
         await checkLicense(auth.email);
       } else {
         console.log('No stored auth found');
-        const uuid = await invoke<string>('get_device_uuid');
+        const uuid = await api.auth.getDeviceUuid();
         setLicenseStatus({
           is_valid: false,
           status: 'not_registered',
           uuid,
-          registration_url: await invoke<string>('get_registration_url'),
+          registration_url: await api.auth.getRegistrationUrl(),
         });
       }
     } catch (error) {
@@ -214,9 +167,7 @@ function App() {
 
   const checkLicense = async (email: string) => {
     try {
-      const status = await invoke<LicenseStatus>('check_license', {
-        userEmail: email
-      });
+      const status = await api.auth.checkLicense(email);
       setLicenseStatus(status);
     } catch (error) {
       console.error('License check failed:', error);
@@ -228,16 +179,16 @@ function App() {
     setLoginMessage(t.login.openingGoogle);
 
     try {
-      const result = await invoke<OAuthStartResult>('start_google_login');
+      const result = await api.auth.startGoogleLogin();
       console.log('OAuth started, opening browser...');
       await invoke('plugin:opener|open_url', { url: result.auth_url });
 
       setLoginMessage(t.login.waitingForLogin);
-      const code = await invoke<string>('wait_for_oauth_callback');
+      const code = await api.auth.waitForOAuthCallback();
       console.log('Got authorization code');
 
       setLoginMessage(t.login.exchangingTokens);
-      const auth = await invoke<StoredAuth>('exchange_oauth_code', { code });
+      const auth = await api.auth.exchangeOAuthCode(code);
       console.log('Got tokens for:', auth.email);
 
       setStoredAuth(auth);
@@ -255,7 +206,7 @@ function App() {
 
   const handleLogout = async () => {
     try {
-      await invoke('logout');
+      await api.auth.logout();
       setStoredAuth(null);
       setLicenseStatus(null);
       await initializeAuth();
@@ -295,25 +246,25 @@ function App() {
       // Detect if URL is a Spotify album
       if (downloadUrl.includes('spotify.com/album') || downloadUrl.startsWith('spotify:album:')) {
         console.log('[App] Detected Spotify album, fetching all tracks...');
-        await invoke('add_spotify_album_to_queue', { albumUrl: downloadUrl });
+        await api.queue.addSpotifyAlbum(downloadUrl);
       }
       // Detect if URL is a Spotify playlist
       else if (downloadUrl.includes('spotify.com/playlist') || downloadUrl.startsWith('spotify:playlist:')) {
         console.log('[App] Detected Spotify playlist, fetching all tracks...');
-        await invoke('add_spotify_playlist_to_queue', { playlistUrl: downloadUrl });
+        await api.queue.addSpotifyPlaylist(downloadUrl);
       }
       // Detect if URL is a YouTube playlist
       else if (downloadUrl.includes('youtube.com') && downloadUrl.includes('list=')) {
         console.log('[App] Detected YouTube playlist, extracting all videos...');
-        await invoke('add_youtube_playlist_to_queue', { playlistUrl: downloadUrl });
+        await api.queue.addYoutubePlaylist(downloadUrl);
       }
       else {
         await invoke<DownloadJob>('add_to_queue', { url: downloadUrl });
       }
 
       setDownloadUrl('');
-      await invoke('start_queue_processing');
-      const status = await invoke<QueueStatus>('get_queue_status');
+      await api.queue.startProcessing();
+      const status = await api.queue.getQueueStatus();
       setQueueStatus(status);
     } catch (error) {
       console.error('Failed to add to queue:', error);
@@ -323,8 +274,8 @@ function App() {
 
   const handleClearCompleted = async () => {
     try {
-      await invoke('clear_completed_jobs');
-      const status = await invoke<QueueStatus>('get_queue_status');
+      await api.queue.clearCompleted();
+      const status = await api.queue.getQueueStatus();
       setQueueStatus(status);
     } catch (error) {
       console.error('Failed to clear completed:', error);
@@ -333,8 +284,8 @@ function App() {
 
   const handleRemoveJob = async (jobId: string) => {
     try {
-      await invoke('remove_from_queue', { jobId });
-      const status = await invoke<QueueStatus>('get_queue_status');
+      await api.queue.removeFromQueue(jobId);
+      const status = await api.queue.getQueueStatus();
       setQueueStatus(status);
     } catch (error) {
       console.error('Failed to remove job:', error);

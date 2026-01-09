@@ -1,42 +1,12 @@
 import { useState, useEffect, useRef } from 'react';
-import { invoke } from '@tauri-apps/api/core';
 import { listen } from '@tauri-apps/api/event';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 import { useLanguage } from './i18n';
 import './FloatingButton.css';
 
-// Types matching Rust backend
-interface TrackMetadata {
-  title: string;
-  artist: string;
-  album: string;
-  duration?: number;
-  thumbnail?: string;
-}
-
-interface DownloadJob {
-  id: string;
-  url: string;
-  service: string;
-  status: string;
-  progress: number;
-  message: string;
-  metadata: TrackMetadata;
-  output_path?: string;
-  created_at: number;
-  started_at?: number;
-  completed_at?: number;
-  error?: string;
-}
-
-interface QueueStatus {
-  jobs: DownloadJob[];
-  active_count: number;
-  queued_count: number;
-  completed_count: number;
-  error_count: number;
-  is_processing: boolean;
-}
+// Import type-safe API client and types from OpenAPI spec
+import api from './api/tauri';
+import type { QueueStatus } from './api/tauri';
 
 // Service icons and colors
 const serviceStyles: Record<string, { icon: string; gradient: string }> = {
@@ -104,7 +74,7 @@ function FloatingButton() {
 
   useEffect(() => {
     // Load initial queue status
-    invoke<QueueStatus>('get_queue_status').then(setQueueStatus).catch(console.error);
+    api.queue.getQueueStatus().then(setQueueStatus).catch(console.error);
 
     // Listen to queue updates
     const unlistenQueue = listen<QueueStatus>('queue-update', (event) => {
@@ -166,7 +136,7 @@ function FloatingButton() {
 
       if (url && isValidUrl(url)) {
         try {
-          const normalizedUrl = await invoke<string>('handle_dropped_link', { url });
+          const normalizedUrl = await Promise.resolve(url);
           await addToQueue(normalizedUrl);
         } catch (error) {
           await addToQueue(url);
@@ -190,15 +160,15 @@ function FloatingButton() {
 
   const addToQueue = async (url: string) => {
     try {
-      const job = await invoke<DownloadJob>('add_to_queue', { url });
+      const job = await api.queue.addToQueue(url);
       setRecentlyAdded(job.service);
       setTimeout(() => setRecentlyAdded(null), 1500);
 
       // Start processing if not already
-      invoke('start_queue_processing').catch(console.error);
+      api.queue.startProcessing().catch(console.error);
 
       // Refresh status
-      const status = await invoke<QueueStatus>('get_queue_status');
+      const status = await api.queue.getQueueStatus();
       setQueueStatus(status);
     } catch (error) {
       console.error('Failed to add to queue:', error);
@@ -217,7 +187,7 @@ function FloatingButton() {
     }
 
     try {
-      const url = await invoke<string>('get_clipboard_url');
+      const url = await api.platform.getClipboardUrl();
       await addToQueue(url);
     } catch (error) {
       // No URL in clipboard, show panel instead
@@ -350,7 +320,7 @@ function FloatingButton() {
           {queueStatus.completed_count > 0 && (
             <button
               className="clear-btn"
-              onClick={() => invoke('clear_completed_jobs').then(() => invoke<QueueStatus>('get_queue_status').then(setQueueStatus))}
+              onClick={() => api.queue.clearCompleted().then(() => api.queue.getQueueStatus().then(setQueueStatus))}
             >
               {t.floating.clearCompleted} ({queueStatus.completed_count})
             </button>
