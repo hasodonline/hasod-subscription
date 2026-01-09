@@ -222,7 +222,7 @@ pub fn remove_from_queue(job_id: String) -> Result<bool, String> {
 
 #[tauri::command]
 pub async fn start_queue_processing(app: AppHandle) -> Result<(), String> {
-    crate::start_queue_processing(app).await
+    crate::download::QueueManager::start_processing(app).await
 }
 
 // ============================================================================
@@ -246,14 +246,14 @@ pub fn create_download_dir() -> Result<String, String> {
 #[tauri::command]
 pub async fn download_youtube(app: AppHandle, url: String, _output_dir: String) -> Result<String, String> {
     let job = add_to_queue(url)?;
-    start_queue_processing(app).await?;
+    crate::download::QueueManager::start_processing(app).await?;
     Ok(format!("Added to queue: {}", job.id))
 }
 
 #[tauri::command]
 pub async fn download_spotify(app: AppHandle, url: String, _output_dir: String) -> Result<String, String> {
     let job = add_to_queue(url)?;
-    start_queue_processing(app).await?;
+    crate::download::QueueManager::start_processing(app).await?;
     Ok(format!("Added to queue: {}", job.id))
 }
 

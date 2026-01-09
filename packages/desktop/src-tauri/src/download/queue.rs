@@ -131,4 +131,52 @@ impl QueueManager {
     pub fn emit_update(app: &AppHandle) {
         app.emit("queue-update", Self::get_status().ok()).ok();
     }
+
+    /// Start processing the download queue
+    /// Processes all queued jobs sequentially
+    pub async fn start_processing(app: AppHandle) -> Result<(), String> {
+        use crate::download::JobProcessor;
+
+        // Check if already processing
+        {
+            let mut processing = QUEUE_PROCESSING.lock().map_err(|e| format!("Lock error: {}", e))?;
+            if *processing {
+                println!("[Queue] Already processing");
+                return Ok(());
+            }
+            *processing = true;
+        }
+
+        let base_output_dir = crate::utils::get_download_dir();
+        std::fs::create_dir_all(&base_output_dir).ok();
+
+        println!("[Queue] Starting queue processing");
+        Self::emit_update(&app);
+
+        // Process queue
+        loop {
+            let next_job_id = Self::get_next_queued_job()?;
+
+            match next_job_id {
+                Some(job_id) => {
+                    println!("[Queue] Processing job: {}", job_id);
+                    match JobProcessor::process_job(&app, job_id.clone(), base_output_dir.clone()).await {
+                        Ok(_) => println!("[Queue] Job {} completed successfully", job_id),
+                        Err(e) => println!("[Queue] Job {} failed: {}", job_id, e),
+                    }
+                }
+                None => {
+                    println!("[Queue] No more jobs to process");
+                    break;
+                }
+            }
+        }
+
+        // Mark processing as complete
+        Self::set_processing(false)?;
+        Self::emit_update(&app);
+        println!("[Queue] Queue processing complete");
+
+        Ok(())
+    }
 }

@@ -83,74 +83,13 @@ fn update_job_status(job_id: &str, status: DownloadStatus, progress: f32, messag
     QueueManager::update_job_status(job_id, status, progress, message);
 }
 
-/// Get download directory (wrapper used by start_queue_processing)
-fn get_download_dir() -> String {
-    utils::get_download_dir()
-}
-
-/// Start processing the download queue
-pub async fn start_queue_processing(app: AppHandle) -> Result<(), String> {
-    // Check if already processing
-    {
-        let mut processing = QUEUE_PROCESSING
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        if *processing {
-            println!("[Queue] Already processing");
-            return Ok(());
-        }
-        *processing = true;
-    }
-
-    let base_output_dir = get_download_dir();
-    fs::create_dir_all(&base_output_dir).ok();
-
-    println!("[Queue] Starting queue processing");
-    app.emit("queue-update", QueueManager::get_status().ok()).ok();
-
-    // Process queue
-    loop {
-        let next_job_id = {
-            let queue = DOWNLOAD_QUEUE
-                .lock()
-                .map_err(|e| format!("Lock error: {}", e))?;
-            queue
-                .iter()
-                .find(|j| j.status == DownloadStatus::Queued)
-                .map(|j| j.id.clone())
-        };
-
-        match next_job_id {
-            Some(job_id) => {
-                println!("[Queue] Processing job: {}", job_id);
-                match JobProcessor::process_job(&app, job_id.clone(), base_output_dir.clone()).await {
-                    Ok(_) => println!("[Queue] Job {} completed successfully", job_id),
-                    Err(e) => println!("[Queue] Job {} failed: {}", job_id, e),
-                }
-            }
-            None => {
-                println!("[Queue] No more jobs to process");
-                break;
-            }
-        }
-    }
-
-    // Mark processing as complete
-    {
-        let mut processing = QUEUE_PROCESSING
-            .lock()
-            .map_err(|e| format!("Lock error: {}", e))?;
-        *processing = false;
-    }
-
-    app.emit("queue-update", QueueManager::get_status().ok()).ok();
-    println!("[Queue] Queue processing complete");
-
-    Ok(())
-}
-
 // ============================================================================
-// All Tauri Commands Moved to commands.rs
+// All Download Logic Moved to Modules
+// ============================================================================
+// - Download orchestration: download/processor.rs (JobProcessor)
+// - Queue processing: download/queue.rs (QueueManager::start_processing)
+// - Service-specific downloads: download/services/{spotify,youtube,apple_music,deezer}.rs
+// - All Tauri commands: commands.rs
 // ============================================================================
 // Commands include: License management, OAuth, Download queue, Platform-specific
 // See commands.rs for all #[tauri::command] implementations
