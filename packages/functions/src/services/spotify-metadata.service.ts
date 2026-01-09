@@ -317,63 +317,82 @@ export class SpotifyMetadataService {
     const albumId = this.extractAlbumId(spotifyUrl);
     console.log(`[Spotify Album] Album ID: ${albumId}`);
 
-    // Get embed access token
-    const accessToken = await this.getEmbedAccessToken('album', albumId);
+    // SAFE METHOD: Use oEmbed + embed scraping + per-track API (avoids 429 errors)
 
-    // Get album info
-    console.log(`[Spotify Album] Fetching album info...`);
-    const albumResponse = await axios.get(
-      `https://api.spotify.com/v1/albums/${albumId}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
+    // Step 1: Get basic album info from Spotify oEmbed (NO AUTH, HIGH RATE LIMIT!)
+    console.log(`[Spotify Album] Using oEmbed API (no auth needed)...`);
+    const oembedUrl = `https://open.spotify.com/oembed?url=spotify:album:${albumId}`;
+    const oembedResponse = await axios.get(oembedUrl);
+    const oembedData = oembedResponse.data;
+
+    console.log(`[Spotify Album] ✅ Album: "${oembedData.title}"`);
+    console.log(`[Spotify Album] ✅ Artwork: ${oembedData.thumbnail_url}`);
+
+    // Step 2: Scrape embed page to extract track IDs
+    console.log(`[Spotify Album] Scraping embed page for track list...`);
+    const embedUrl = oembedData.iframe_url || `https://open.spotify.com/embed/album/${albumId}`;
+    const embedResponse = await axios.get(embedUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+
+    const trackUriMatches = [...embedResponse.data.matchAll(/spotify:track:([a-zA-Z0-9]+)/g)];
+    const trackIds = [...new Set(trackUriMatches.map((m: any) => m[1]))];
+
+    console.log(`[Spotify Album] ✅ Found ${trackIds.length} tracks in embed page`);
+
+    // Step 3: Use existing getTrackMetadata for each track (has fallback logic!)
+    console.log(`[Spotify Album] Fetching full metadata for each track...`);
+
+    const tracks: SpotifyAlbumTrack[] = [];
+    let albumName = oembedData.title;
+    let albumArtist = '';
+    let releaseDate = '';
+
+    for (let i = 0; i < trackIds.length; i++) {
+      const trackId = trackIds[i];
+      const trackUrl = `https://open.spotify.com/track/${trackId}`;
+
+      try {
+        console.log(`[Spotify Album] [${i + 1}/${trackIds.length}] Fetching ${trackId}...`);
+
+        // Use existing track metadata method (has Groover + ISRC Finder fallbacks!)
+        const trackMetadata = await this.getTrackMetadata(trackUrl);
+
+        // Extract album info from first track
+        if (i === 0) {
+          albumArtist = trackMetadata.artist;
+          releaseDate = trackMetadata.releaseDate || '';
+        }
+
+        tracks.push({
+          trackId,
+          position: i + 1,
+          name: trackMetadata.name,
+          artists: trackMetadata.artist,
+          album: trackMetadata.album,
+          isrc: trackMetadata.isrc,
+          duration_ms: trackMetadata.duration_ms,
+          imageUrl: trackMetadata.imageUrl || oembedData.thumbnail_url,
+          releaseDate: trackMetadata.releaseDate,
+        });
+
+        console.log(`[Spotify Album] ✅ "${trackMetadata.name}" by ${trackMetadata.artist}`);
+      } catch (error) {
+        console.log(`[Spotify Album] ⚠️ Track ${trackId} failed: ${error}`);
+        // Continue with other tracks even if one fails
       }
-    );
+    }
 
-    const albumData = albumResponse.data;
-    const trackIds = albumData.tracks.items.map((t: any) => t.id);
-
-    console.log(`[Spotify Album] Album: "${albumData.name}" by "${albumData.artists[0].name}"`);
-    console.log(`[Spotify Album] Total tracks: ${trackIds.length}`);
-
-    // Get all track details with ISRCs (batch - up to 50 tracks)
-    console.log(`[Spotify Album] Fetching ISRCs for all ${trackIds.length} tracks...`);
-
-    const tracksResponse = await axios.get(
-      'https://api.spotify.com/v1/tracks',
-      {
-        params: {
-          ids: trackIds.join(','),
-        },
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
-      }
-    );
+    console.log(`[Spotify Album] ✅ Successfully fetched ${tracks.length}/${trackIds.length} tracks`);
 
     const albumInfo: SpotifyAlbumInfo = {
-      albumId: albumData.id,
-      name: albumData.name,
-      artist: albumData.artists[0].name,
-      releaseDate: albumData.release_date,
-      totalTracks: albumData.tracks.total,
-      imageUrl: albumData.images[0]?.url || '',
+      albumId,
+      name: albumName,
+      artist: albumArtist || 'Various Artists',
+      releaseDate,
+      totalTracks: trackIds.length,
+      imageUrl: oembedData.thumbnail_url,
     };
-
-    const tracks: SpotifyAlbumTrack[] = tracksResponse.data.tracks.map((track: any, idx: number) => ({
-      trackId: track.id,
-      position: idx + 1,
-      name: track.name,
-      artists: track.artists.map((a: any) => a.name).join(', '),
-      album: albumData.name,
-      isrc: track.external_ids?.isrc,
-      duration_ms: track.duration_ms,
-      imageUrl: albumData.images[0]?.url || '',
-      releaseDate: albumData.release_date,
-    }));
-
-    console.log(`[Spotify Album] ✅ Got ${tracks.length} tracks with ISRCs`);
 
     return {
       album: albumInfo,
@@ -390,75 +409,74 @@ export class SpotifyMetadataService {
     const playlistId = this.extractPlaylistId(spotifyUrl);
     console.log(`[Spotify Playlist] Playlist ID: ${playlistId}`);
 
-    // Get embed access token
-    const accessToken = await this.getEmbedAccessToken('playlist', playlistId);
+    // SAFE METHOD: Use oEmbed + embed scraping + per-track API (avoids 429 errors)
 
-    // Get playlist info
-    console.log(`[Spotify Playlist] Fetching playlist info...`);
-    const playlistResponse = await axios.get(
-      `https://api.spotify.com/v1/playlists/${playlistId}`,
-      {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`,
-        },
+    // Step 1: Get basic playlist info from Spotify oEmbed (NO AUTH, HIGH RATE LIMIT!)
+    console.log(`[Spotify Playlist] Using oEmbed API (no auth needed)...`);
+    const oembedUrl = `https://open.spotify.com/oembed?url=spotify:playlist:${playlistId}`;
+    const oembedResponse = await axios.get(oembedUrl);
+    const oembedData = oembedResponse.data;
+
+    console.log(`[Spotify Playlist] ✅ Playlist: "${oembedData.title}"`);
+    console.log(`[Spotify Playlist] ✅ Artwork: ${oembedData.thumbnail_url}`);
+
+    // Step 2: Scrape embed page to extract track IDs
+    console.log(`[Spotify Playlist] Scraping embed page for track list...`);
+    const embedUrl = oembedData.iframe_url || `https://open.spotify.com/embed/playlist/${playlistId}`;
+    const embedResponse = await axios.get(embedUrl, {
+      headers: { 'User-Agent': 'Mozilla/5.0' },
+    });
+
+    const trackUriMatches = [...embedResponse.data.matchAll(/spotify:track:([a-zA-Z0-9]+)/g)];
+    const trackIds = [...new Set(trackUriMatches.map((m: any) => m[1]))];
+
+    console.log(`[Spotify Playlist] ✅ Found ${trackIds.length} tracks in embed page`);
+
+    // Step 3: Use existing getTrackMetadata for each track (has fallback logic!)
+    console.log(`[Spotify Playlist] Fetching full metadata for each track...`);
+
+    const tracks: SpotifyPlaylistTrack[] = [];
+    let playlistOwner = 'Unknown';
+
+    for (let i = 0; i < trackIds.length; i++) {
+      const trackId = trackIds[i];
+      const trackUrl = `https://open.spotify.com/track/${trackId}`;
+
+      try {
+        console.log(`[Spotify Playlist] [${i + 1}/${trackIds.length}] Fetching ${trackId}...`);
+
+        // Use existing track metadata method (has Groover + ISRC Finder fallbacks!)
+        const trackMetadata = await this.getTrackMetadata(trackUrl);
+
+        tracks.push({
+          trackId,
+          position: i + 1,
+          name: trackMetadata.name,
+          artists: trackMetadata.artist,
+          album: trackMetadata.album,
+          isrc: trackMetadata.isrc,
+          duration_ms: trackMetadata.duration_ms,
+          imageUrl: trackMetadata.imageUrl || oembedData.thumbnail_url,
+          releaseDate: trackMetadata.releaseDate,
+        });
+
+        console.log(`[Spotify Playlist] ✅ "${trackMetadata.name}" by ${trackMetadata.artist}`);
+      } catch (error) {
+        console.log(`[Spotify Playlist] ⚠️ Track ${trackId} failed: ${error}`);
+        // Continue with other tracks even if one fails
       }
-    );
-
-    const playlistData = playlistResponse.data;
-    const trackIds = playlistData.tracks.items
-      .filter((item: any) => item.track && item.track.id) // Filter out null tracks
-      .map((item: any) => item.track.id);
-
-    console.log(`[Spotify Playlist] Playlist: "${playlistData.name}" by "${playlistData.owner.display_name}"`);
-    console.log(`[Spotify Playlist] Total tracks: ${trackIds.length}`);
-
-    // Get all track details with ISRCs (batch - up to 50 tracks per request)
-    console.log(`[Spotify Playlist] Fetching ISRCs for all ${trackIds.length} tracks...`);
-
-    const allTracks: any[] = [];
-    const chunkSize = 50; // Spotify API limit for batch track requests
-
-    for (let i = 0; i < trackIds.length; i += chunkSize) {
-      const chunk = trackIds.slice(i, i + chunkSize);
-      console.log(`[Spotify Playlist] Fetching chunk ${Math.floor(i / chunkSize) + 1}/${Math.ceil(trackIds.length / chunkSize)} (${chunk.length} tracks)`);
-
-      const tracksResponse = await axios.get(
-        'https://api.spotify.com/v1/tracks',
-        {
-          params: {
-            ids: chunk.join(','),
-          },
-          headers: {
-            'Authorization': `Bearer ${accessToken}`,
-          },
-        }
-      );
-
-      allTracks.push(...tracksResponse.data.tracks);
     }
 
+    console.log(`[Spotify Playlist] ✅ Successfully fetched ${tracks.length}/${trackIds.length} tracks`);
+
     const playlistInfo: SpotifyPlaylistInfo = {
-      playlistId: playlistData.id,
-      name: playlistData.name,
-      owner: playlistData.owner.display_name,
-      description: playlistData.description || '',
+      playlistId,
+      name: oembedData.title,
+      owner: playlistOwner,
+      description: '',
       totalTracks: trackIds.length,
-      imageUrl: playlistData.images[0]?.url || '',
+      imageUrl: oembedData.thumbnail_url,
     };
-
-    const tracks: SpotifyPlaylistTrack[] = allTracks.map((track: any, idx: number) => ({
-      trackId: track.id,
-      position: idx + 1,
-      name: track.name,
-      artists: track.artists.map((a: any) => a.name).join(', '),
-      album: track.album.name,
-      isrc: track.external_ids?.isrc,
-      duration_ms: track.duration_ms,
-      imageUrl: track.album.images[0]?.url || '',
-      releaseDate: track.album.release_date,
-    }));
-
-    console.log(`[Spotify Playlist] ✅ Got ${tracks.length} tracks with ISRCs`);
 
     return {
       playlist: playlistInfo,
