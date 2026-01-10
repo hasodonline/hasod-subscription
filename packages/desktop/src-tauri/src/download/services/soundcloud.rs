@@ -47,7 +47,13 @@ impl SoundCloudDownloader {
         }
 
         // Parse metadata
-        let metadata = Self::parse_soundcloud_metadata(&json_output);
+        let mut metadata = Self::parse_soundcloud_metadata(&json_output);
+
+        // Transliterate if English Only mode is enabled (BEFORE calculating path)
+        metadata = crate::download::transliteration::transliterate_if_needed(&metadata)
+            .await
+            .unwrap_or(metadata);
+
         update_metadata_fn(metadata.clone());
         emit_queue_fn();
 
@@ -56,7 +62,7 @@ impl SoundCloudDownloader {
             metadata.title, metadata.artist
         );
 
-        // Step 2: Calculate output path
+        // Step 2: Calculate output path (uses transliterated metadata)
         let output_path = crate::utils::filesystem::get_organized_output_path(
             base_output_dir,
             &metadata,

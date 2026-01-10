@@ -350,7 +350,12 @@ impl YouTubeDownloader {
             }
         }
 
-        // Step 2: Update job metadata
+        // Step 2: Transliterate metadata if English Only mode is enabled
+        let metadata = crate::download::transliteration::transliterate_if_needed(&metadata)
+            .await
+            .unwrap_or(metadata);
+
+        // Step 3: Update job metadata
         update_metadata_fn(metadata.clone());
         emit_queue_fn();
 
@@ -359,7 +364,7 @@ impl YouTubeDownloader {
             metadata.title, metadata.artist, metadata.album
         );
 
-        // Step 3: Calculate output path
+        // Step 4: Calculate output path (now uses transliterated metadata)
         let output_path = crate::utils::filesystem::get_organized_output_path(
             base_output_dir,
             &metadata,

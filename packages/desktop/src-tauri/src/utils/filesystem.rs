@@ -56,9 +56,10 @@ pub fn get_organized_output_path(
             // Single track: /unsorted/
             PathBuf::from(base_dir).join("unsorted")
         }
-        crate::download::DownloadContext::Album(album_name) => {
+        crate::download::DownloadContext::Album(_) => {
             // Album: /artist/album name/
-            let album = sanitize_filename(album_name);
+            // Use metadata.album (which is transliterated) instead of context album_name
+            let album = sanitize_filename(&metadata.album);
             PathBuf::from(base_dir)
                 .join(if artist.is_empty() || artist == "Unknown Artist" {
                     "Unknown Artist"

@@ -186,6 +186,12 @@ impl AppleMusicDownloader {
                 thumbnail: None,
             }
         };
+
+        // Transliterate if English Only mode is enabled (BEFORE calculating path)
+        let track_metadata = crate::download::transliteration::transliterate_if_needed(&track_metadata)
+            .await
+            .unwrap_or(track_metadata);
+
         update_metadata_fn(track_metadata.clone());
 
         // Step 3: Find best YouTube source

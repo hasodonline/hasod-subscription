@@ -347,17 +347,24 @@ impl SpotifyDownloader {
         // Step 1: Get metadata from backend API
         let spotify_metadata = Self::get_metadata_from_api(url).await?;
 
-        // Step 2: Update job metadata
-        let track_metadata = TrackMetadata {
+        // Step 2: Create track metadata
+        let mut track_metadata = TrackMetadata {
             title: spotify_metadata.name.clone(),
             artist: spotify_metadata.artist.clone(),
             album: spotify_metadata.album.clone(),
             duration: Some((spotify_metadata.duration_ms / 1000) as u32),
             thumbnail: Some(spotify_metadata.image_url.clone()),
         };
+
+        // Step 2.5: Transliterate if English Only mode is enabled (BEFORE calculating path)
+        track_metadata = crate::download::transliteration::transliterate_if_needed(&track_metadata)
+            .await
+            .unwrap_or(track_metadata);
+
+        // Step 3: Update job metadata (now with transliterated values)
         update_metadata_fn(track_metadata.clone());
 
-        // Step 3: Calculate output path
+        // Step 4: Calculate output path (uses transliterated metadata)
         let output_path = crate::utils::filesystem::get_organized_output_path(
             base_output_dir,
             &track_metadata,

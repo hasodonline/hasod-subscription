@@ -82,34 +82,8 @@ impl JobProcessor {
             QueueManager::emit_update(app);
         };
 
-        let update_metadata_fn = |mut metadata: TrackMetadata| {
-            // Transliterate if English Only mode is enabled
-            let metadata_clone = metadata.clone();
-            let job_id_clone = job_id.to_string();
-            let app_clone = app.clone();
-
-            tauri::async_runtime::spawn(async move {
-                match crate::download::transliteration::transliterate_if_needed(&metadata_clone).await {
-                    Ok(transliterated) => {
-                        // Update job with transliterated metadata
-                        let _ = QueueManager::update_job_metadata(&job_id_clone, |job| {
-                            job.metadata = transliterated.clone();
-                        });
-
-                        // Update floating panel with transliterated title
-                        FloatingPanelManager::update_status(&app_clone, "fetching", 5.0, &transliterated.title, 0);
-                    }
-                    Err(e) => {
-                        println!("[Transliteration] Error: {}", e);
-                        // Use original metadata on error
-                        let _ = QueueManager::update_job_metadata(&job_id_clone, |job| {
-                            job.metadata = metadata_clone.clone();
-                        });
-                    }
-                }
-            });
-
-            // Also update immediately with original (will be replaced by transliterated if successful)
+        let update_metadata_fn = |metadata: TrackMetadata| {
+            // Metadata is already transliterated by the service downloader if needed
             let _ = QueueManager::update_job_metadata(&job_id, |job| {
                 job.metadata = metadata.clone();
             });
