@@ -24,7 +24,10 @@ export function QueueItem({ job, serviceStyle, onRemove, onPlay, isPlaying }: Qu
     }
   };
 
-  const handlePlay = () => {
+  const handlePlay = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     if (job.status === 'Complete' && job.output_path) {
       onPlay(job.output_path);
     }

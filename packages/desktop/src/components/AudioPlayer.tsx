@@ -18,8 +18,6 @@ export function AudioPlayer({ filePath, onClose }: AudioPlayerProps) {
 
     // Convert file path to Tauri URL
     const audioSrc = convertFileSrc(filePath);
-    console.log('[AudioPlayer] Loading file:', filePath);
-    console.log('[AudioPlayer] Tauri URL:', audioSrc);
     audioRef.current.src = audioSrc;
     audioRef.current.load();
   }, [filePath]);
@@ -32,13 +30,9 @@ export function AudioPlayer({ filePath, onClose }: AudioPlayerProps) {
     const updateDuration = () => setDuration(audio.duration);
     const handleEnded = () => setIsPlaying(false);
     const handleError = (e: Event) => {
+      e.preventDefault();
       const audioEl = e.target as HTMLAudioElement;
-      console.error('[AudioPlayer] Audio error:', {
-        error: audioEl.error,
-        code: audioEl.error?.code,
-        message: audioEl.error?.message,
-        src: audioEl.src,
-      });
+      console.error('[AudioPlayer] Audio error:', audioEl.error?.message || 'Unknown error');
       setIsPlaying(false);
     };
 
@@ -55,7 +49,10 @@ export function AudioPlayer({ filePath, onClose }: AudioPlayerProps) {
     };
   }, []);
 
-  const handlePlayPause = async () => {
+  const handlePlayPause = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     if (!audioRef.current) return;
 
     if (isPlaying) {
@@ -67,12 +64,14 @@ export function AudioPlayer({ filePath, onClose }: AudioPlayerProps) {
         setIsPlaying(true);
       } catch (error) {
         console.error('[AudioPlayer] Play failed:', error);
-        alert('Failed to play audio. The file might be corrupted or in an unsupported format.');
       }
     }
   };
 
-  const handleStop = () => {
+  const handleStop = (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+
     if (!audioRef.current) return;
     audioRef.current.pause();
     audioRef.current.currentTime = 0;
@@ -90,8 +89,8 @@ export function AudioPlayer({ filePath, onClose }: AudioPlayerProps) {
   if (!filePath) return null;
 
   return (
-    <div className="audio-player">
-      <audio ref={audioRef} />
+    <div className="audio-player" onClick={(e) => e.stopPropagation()}>
+      <audio ref={audioRef} preload="metadata" />
 
       <div className="player-controls">
         <button

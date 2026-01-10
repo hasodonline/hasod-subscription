@@ -1672,6 +1672,7 @@ dependencies = [
  "cipher",
  "cocoa",
  "dirs 5.0.1",
+ "futures-util",
  "hex",
  "keyring",
  "machine-uid",

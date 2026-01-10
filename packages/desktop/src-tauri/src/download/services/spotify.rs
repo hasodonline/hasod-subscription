@@ -377,12 +377,15 @@ impl SpotifyDownloader {
         if !auth_token.is_empty() {
             println!("[Spotify] Using auth token for Deezer API call");
 
-            match DeezerDownloader::download_and_decrypt(
+            match DeezerDownloader::download_and_decrypt_with_progress(
                 app,
                 &spotify_metadata.isrc,
                 &auth_token,
                 &output_path_str,
                 Some(&spotify_metadata.image_url),
+                job_id,
+                &update_status_fn,
+                &emit_queue_fn,
             )
             .await
             {
