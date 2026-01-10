@@ -17,19 +17,24 @@
 }
 
 body {
-  min-height: 100vh;
+  height: 100vh;
+  overflow: hidden;
   background: #f5f5f5;
+  margin: 0;
+  padding: 0;
 }
 
 .app-container {
-  min-height: 100vh;
+  height: 100vh;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
 /* Header */
 .app-header {
   position: relative;
+  flex-shrink: 0;
   text-align: center;
   padding: 30px 20px;
   background: #ffffff;
@@ -88,6 +93,7 @@ body {
 
 /* Tabs */
 .tabs {
+  flex-shrink: 0;
   display: flex;
   gap: 10px;
   padding: 20px;
@@ -130,15 +136,14 @@ body {
   flex: 1;
   min-height: 0;
   padding: 30px;
-  overflow: hidden; /* important: only queue scrolls */
+  padding-bottom: 140px; /* Extra padding to scroll past fixed audio player */
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
-/* Download Tab - Flex layout for proper scrolling */
+/* Download Tab */
 .download-tab {
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  min-height: 0;
+  /* Let it flow naturally, .content handles scrolling */
 }
 
 /* License Tab */
@@ -440,15 +445,10 @@ details.progress-box[open] summary {
 
 /* Queue Section */
 .queue-section {
-  flex: 1;
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
   background: #ffffff;
   border: 1px solid #e0e0e0;
   border-radius: 12px;
   margin-bottom: 20px;
-  overflow: hidden;
 }
 
 .queue-header {
@@ -514,35 +514,9 @@ details.progress-box[open] summary {
   border-color: #ccc;
 }
 
-/* Queue List */
+/* Queue List - Simple, no internal scroll */
 .queue-list {
-  flex: 1;
-  min-height: 0;
-  max-height: none;
-  overflow-y: auto;
-  overflow-x: hidden;
-  scroll-behavior: smooth;
-  /* IMPORTANT: padding to scroll past the fixed audio player */
-  padding-bottom: 110px;
-  scroll-padding-bottom: 110px;
-}
-
-.queue-list::-webkit-scrollbar {
-  width: 10px;
-}
-
-.queue-list::-webkit-scrollbar-track {
-  background: #f0f0f0;
-  border-radius: 5px;
-}
-
-.queue-list::-webkit-scrollbar-thumb {
-  background: #3B8ED0;
-  border-radius: 5px;
-}
-
-.queue-list::-webkit-scrollbar-thumb:hover {
-  background: #2d7ac0;
+  /* Just a normal list - .content handles scrolling */
 }
 
 .queue-item {
@@ -717,6 +691,7 @@ details.progress-box[open] summary {
 
 /* Footer */
 .app-footer {
+  flex-shrink: 0;
   text-align: center;
   padding: 20px;
   background: #ffffff;
