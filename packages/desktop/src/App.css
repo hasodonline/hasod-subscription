@@ -503,10 +503,11 @@ details.progress-box[open] summary {
 
 /* Queue List */
 .queue-list {
-  max-height: 500px;
+  max-height: 60vh;
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
+  padding-bottom: 20px;
 }
 
 .queue-list::-webkit-scrollbar {
