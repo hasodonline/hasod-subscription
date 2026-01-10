@@ -81,64 +81,42 @@ export function DownloadTab({
 
   return (
     <div className="download-tab">
-      <h2>{t.download.title}</h2>
-
       {!isLicenseValid && (
         <div className="warning-box">
           {t.download.licenseWarning}
         </div>
       )}
 
-      {/* English Only Mode Toggle */}
-      <div className="settings-row">
-        <label className="toggle-container">
+      {/* Sticky header area - stays on top when scrolling */}
+      <div className="download-sticky-header">
+        {/* URL Input */}
+        <div className="download-form">
           <input
-            type="checkbox"
-            checked={englishOnlyMode}
-            onChange={handleToggleEnglishOnly}
-            className="toggle-checkbox"
+            type="text"
+            value={downloadUrl}
+            onChange={(e) => setDownloadUrl(e.target.value)}
+            placeholder={t.download.urlPlaceholder}
+            className="url-input"
+            disabled={!isLicenseValid || adding}
+            onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()}
           />
-          <span className="toggle-slider"></span>
-          <span className="toggle-label">
-            {t.download.englishOnlyMode || 'English Only Filenames'}
-          </span>
-          <span className="toggle-hint">
-            {t.download.englishOnlyHint || '(Transliterates Hebrew to English)'}
-          </span>
-        </label>
-      </div>
+          <button
+            onClick={handleAddToQueue}
+            disabled={!isLicenseValid || !downloadUrl.trim() || adding}
+            className="btn-download"
+          >
+            {adding ? t.common.loading + '...' : t.download.addToQueue}
+          </button>
+        </div>
 
-      {/* Supported Services Banner */}
-      <div className="services-banner">
-        <span className="services-label">{t.download.supported}</span>
-        <div className="services-list">
+        {/* Supported Services - Compact */}
+        <div className="services-compact">
           {Object.entries(serviceStyles).slice(0, 7).map(([key, style]) => (
-            <span key={key} className="service-chip" title={style.name}>
-              <span className="service-icon">{style.icon}</span>
-              <span className="service-name">{style.name}</span>
+            <span key={key} className="service-icon-small" title={style.name}>
+              {style.icon}
             </span>
           ))}
         </div>
-      </div>
-
-      {/* URL Input */}
-      <div className="download-form">
-        <input
-          type="text"
-          value={downloadUrl}
-          onChange={(e) => setDownloadUrl(e.target.value)}
-          placeholder={t.download.urlPlaceholder}
-          className="url-input"
-          disabled={!isLicenseValid || adding}
-          onKeyDown={(e) => e.key === 'Enter' && handleAddToQueue()}
-        />
-        <button
-          onClick={handleAddToQueue}
-          disabled={!isLicenseValid || !downloadUrl.trim() || adding}
-          className="btn-download"
-        >
-          {adding ? t.common.loading + '...' : t.download.addToQueue}
-        </button>
       </div>
 
       {/* Queue Status */}

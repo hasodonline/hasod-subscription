@@ -1,5 +1,6 @@
 // Queue List Component - Shows queue with stats and controls
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import type { QueueStatus } from '../../api/tauri';
 import { useLanguage } from '../../i18n';
 import { QueueItem } from './QueueItem';
@@ -22,6 +23,24 @@ export function QueueList({
 }: QueueListProps) {
   const { t } = useLanguage();
   const [currentAudioPath, setCurrentAudioPath] = useState<string | null>(null);
+  const [englishOnlyMode, setEnglishOnlyMode] = useState(false);
+
+  // Load English Only mode on mount
+  useEffect(() => {
+    invoke<boolean>('get_english_only_mode')
+      .then(setEnglishOnlyMode)
+      .catch(console.error);
+  }, []);
+
+  const handleToggleEnglishOnly = async () => {
+    const newValue = !englishOnlyMode;
+    try {
+      await invoke('set_english_only_mode', { enabled: newValue });
+      setEnglishOnlyMode(newValue);
+    } catch (error) {
+      console.error('Failed to toggle English Only mode:', error);
+    }
+  };
 
   const handlePlay = (filePath: string) => {
     if (currentAudioPath === filePath) {
@@ -65,6 +84,18 @@ export function QueueList({
             </span>
           )}
         </div>
+
+        {/* English Only Toggle - Compact */}
+        <label className="toggle-compact" title={t.download.englishOnlyHint || 'Transliterates Hebrew to English'}>
+          <input
+            type="checkbox"
+            checked={englishOnlyMode}
+            onChange={handleToggleEnglishOnly}
+            className="toggle-checkbox-small"
+          />
+          <span className="toggle-slider-small"></span>
+          <span className="toggle-label-small">EN</span>
+        </label>
 
         <div className="queue-actions">
           {queueStatus.completed_count > 0 && (
