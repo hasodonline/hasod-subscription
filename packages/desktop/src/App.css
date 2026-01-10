@@ -128,8 +128,17 @@ body {
 /* Content */
 .content {
   flex: 1;
+  min-height: 0;
   padding: 30px;
-  overflow-y: auto;
+  overflow: hidden; /* important: only queue scrolls */
+}
+
+/* Download Tab - Flex layout for proper scrolling */
+.download-tab {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
 }
 
 /* License Tab */
@@ -431,6 +440,10 @@ details.progress-box[open] summary {
 
 /* Queue Section */
 .queue-section {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   background: #ffffff;
   border: 1px solid #e0e0e0;
   border-radius: 12px;
@@ -503,11 +516,15 @@ details.progress-box[open] summary {
 
 /* Queue List */
 .queue-list {
-  max-height: 70vh;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
-  margin-bottom: 10px;
+  /* IMPORTANT: padding to scroll past the fixed audio player */
+  padding-bottom: 110px;
+  scroll-padding-bottom: 110px;
 }
 
 .queue-list::-webkit-scrollbar {
