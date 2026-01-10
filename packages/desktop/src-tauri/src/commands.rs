@@ -221,6 +221,11 @@ pub fn remove_from_queue(job_id: String) -> Result<bool, String> {
 }
 
 #[tauri::command]
+pub fn clear_all_queue() -> Result<usize, String> {
+    crate::download::QueueManager::clear_all()
+}
+
+#[tauri::command]
 pub async fn start_queue_processing(app: AppHandle) -> Result<(), String> {
     crate::download::QueueManager::start_processing(app).await
 }
@@ -228,6 +233,44 @@ pub async fn start_queue_processing(app: AppHandle) -> Result<(), String> {
 // ============================================================================
 // Filesystem Commands
 // ============================================================================
+
+#[tauri::command]
+pub async fn open_file_location(file_path: String) -> Result<(), String> {
+    use std::process::Command;
+
+    #[cfg(target_os = "macos")]
+    {
+        Command::new("open")
+            .arg("-R")
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| format!("Failed to open file location: {}", e))?;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("explorer")
+            .arg("/select,")
+            .arg(&file_path)
+            .spawn()
+            .map_err(|e| format!("Failed to open file location: {}", e))?;
+    }
+
+    #[cfg(target_os = "linux")]
+    {
+        // Extract directory from file path
+        use std::path::Path;
+        let path = Path::new(&file_path);
+        if let Some(parent) = path.parent() {
+            Command::new("xdg-open")
+                .arg(parent)
+                .spawn()
+                .map_err(|e| format!("Failed to open file location: {}", e))?;
+        }
+    }
+
+    Ok(())
+}
 
 #[tauri::command]
 pub fn get_download_dir() -> String {

@@ -92,6 +92,14 @@ impl QueueManager {
         Ok(removed)
     }
 
+    /// Clear all jobs from queue (including queued, not just completed)
+    pub fn clear_all() -> Result<usize, String> {
+        let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;
+        let removed = queue.len();
+        queue.clear();
+        Ok(removed)
+    }
+
     /// Remove a specific job from queue
     pub fn remove_job(job_id: &str) -> Result<bool, String> {
         let mut queue = DOWNLOAD_QUEUE.lock().map_err(|e| format!("Lock error: {}", e))?;

@@ -185,6 +185,7 @@ pub fn run() {
             commands::add_youtube_playlist_to_queue,
             commands::get_queue_status,
             commands::clear_completed_jobs,
+            commands::clear_all_queue,
             commands::remove_from_queue,
             commands::start_queue_processing,
             // Legacy download commands
@@ -192,6 +193,7 @@ pub fn run() {
             commands::download_spotify,
             commands::get_download_dir,
             commands::create_download_dir,
+            commands::open_file_location,
             // Platform-specific
             commands::toggle_floating_window,
             commands::is_floating_window_open,
