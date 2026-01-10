@@ -1,10 +1,30 @@
 // Platform-specific functionality
+// Clean separation by feature:
+// - clipboard.rs: Cross-platform clipboard (all OS)
+// - floating_panel_macos.rs: macOS native NSPanel
+// - floating_panel_tauri.rs: Windows/Linux Tauri window
 
-// macos module contains cross-platform ClipboardManager, so always compile it
-pub mod macos;
+// ============================================================================
+// Clipboard (Cross-platform)
+// ============================================================================
+
+mod clipboard;
+pub use clipboard::ClipboardManager;
+
+// ============================================================================
+// Floating Panel (Platform-specific)
+// ============================================================================
+
+// macOS: Native NSPanel with WKWebView
+#[cfg(target_os = "macos")]
+mod floating_panel_macos;
 
 #[cfg(target_os = "macos")]
-pub use macos::FloatingPanelManager;
+pub use floating_panel_macos::FloatingPanelManager;
 
-// ClipboardManager is available on all platforms (implementation in macos.rs)
-pub use macos::ClipboardManager;
+// Windows & Linux: Tauri WebviewWindow
+#[cfg(not(target_os = "macos"))]
+mod floating_panel_tauri;
+
+#[cfg(not(target_os = "macos"))]
+pub use floating_panel_tauri::FloatingPanelManager;

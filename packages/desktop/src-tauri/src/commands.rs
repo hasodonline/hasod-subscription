@@ -258,22 +258,18 @@ pub async fn download_spotify(app: AppHandle, url: String, _output_dir: String) 
 }
 
 // ============================================================================
-// Platform Commands
+// Platform Commands (Cross-platform)
 // ============================================================================
 
-#[cfg(target_os = "macos")]
+/// Toggle the floating panel window
+/// Works on all platforms (macOS: native NSPanel, Windows/Linux: Tauri window)
 #[tauri::command]
 pub fn toggle_floating_window(app: AppHandle) -> Result<(), String> {
     use crate::platform::FloatingPanelManager;
     FloatingPanelManager::toggle(app)
 }
 
-#[cfg(not(target_os = "macos"))]
-#[tauri::command]
-pub fn toggle_floating_window(_app: AppHandle) -> Result<(), String> {
-    Err("Floating window is only supported on macOS".to_string())
-}
-
+/// Check if the floating panel is currently open
 #[cfg(target_os = "macos")]
 #[tauri::command]
 pub fn is_floating_window_open(_app: AppHandle) -> bool {
@@ -281,27 +277,16 @@ pub fn is_floating_window_open(_app: AppHandle) -> bool {
     FloatingPanelManager::is_open()
 }
 
+/// Check if the floating panel is currently open (Tauri-based platforms)
 #[cfg(not(target_os = "macos"))]
 #[tauri::command]
-pub fn is_floating_window_open(_app: AppHandle) -> bool {
-    false
+pub fn is_floating_window_open(app: AppHandle) -> bool {
+    use crate::platform::FloatingPanelManager;
+    FloatingPanelManager::is_open(&app)
 }
 
-#[cfg(target_os = "macos")]
-#[tauri::command]
-pub async fn get_clipboard_url() -> Result<String, String> {
-    use crate::platform::ClipboardManager;
-    ClipboardManager::get_url().await
-}
-
-#[cfg(target_os = "windows")]
-#[tauri::command]
-pub async fn get_clipboard_url() -> Result<String, String> {
-    use crate::platform::ClipboardManager;
-    ClipboardManager::get_url().await
-}
-
-#[cfg(target_os = "linux")]
+/// Get URL from clipboard (cross-platform)
+/// macOS: pbpaste, Windows: PowerShell, Linux: xclip
 #[tauri::command]
 pub async fn get_clipboard_url() -> Result<String, String> {
     use crate::platform::ClipboardManager;
