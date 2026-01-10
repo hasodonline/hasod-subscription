@@ -503,7 +503,7 @@ details.progress-box[open] summary {
 
 /* Queue List */
 .queue-list {
-  max-height: 60vh;
+  max-height: calc(100vh - 400px);
   overflow-y: auto;
   overflow-x: hidden;
   scroll-behavior: smooth;
