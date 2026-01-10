@@ -414,10 +414,13 @@ impl YouTubeDownloader {
                             last_progress,
                             &format!("Downloading... {:.1}%", pct),
                         );
+                        // Emit queue update for real-time UI refresh
+                        emit_queue_fn();
                     }
 
                     if line_str.contains("[ExtractAudio]") || line_str.contains("[Merger]") {
                         update_status_fn(job_id, DownloadStatus::Converting, 92.0, "Converting to MP3...");
+                        emit_queue_fn();
                     }
                 }
                 tauri_plugin_shell::process::CommandEvent::Stderr(line) => {

@@ -17,7 +17,7 @@ tauri-build = { version = "2", features = [] }
 # When adding new endpoints, update api_types.rs to match the spec
 
 [dependencies]
-tauri = { version = "2", features = ["devtools", "tray-icon", "image-png", "macos-private-api"] }
+tauri = { version = "2", features = ["protocol-asset", "devtools", "tray-icon", "image-png", "macos-private-api"] }
 tauri-plugin-opener = "2"
 tauri-plugin-shell = "2"
 serde = { version = "1", features = ["derive"] }

@@ -47,8 +47,36 @@ impl JobProcessor {
         println!("[Download] Starting {} download for job {}", service.display_name(), job_id);
 
         // Helper closures for callbacks
+        let get_queued_count = || -> usize {
+            DOWNLOAD_QUEUE
+                .lock()
+                .map(|q| q.iter().filter(|j| j.status == DownloadStatus::Queued).count())
+                .unwrap_or(0)
+        };
+
         let update_status_fn = |id: &str, status: DownloadStatus, progress: f32, message: &str| {
+            // Map status to floating panel states before status is moved
+            let panel_state = match status {
+                DownloadStatus::Downloading if progress < 10.0 => "fetching",
+                DownloadStatus::Downloading => "downloading",
+                DownloadStatus::Converting => "converting",
+                DownloadStatus::Complete => "complete",
+                DownloadStatus::Error => "error",
+                _ => "processing",
+            };
+
+            // Update job status (this moves status)
             QueueManager::update_job_status(id, status, progress, message);
+
+            // Get current track title from queue
+            let title = DOWNLOAD_QUEUE
+                .lock()
+                .ok()
+                .and_then(|q| q.iter().find(|j| j.id == id).map(|j| j.metadata.title.clone()))
+                .unwrap_or_else(|| message.to_string());
+
+            // Update floating panel with real-time progress
+            FloatingPanelManager::update_status(app, panel_state, progress, &title, get_queued_count());
         };
 
         let emit_queue_fn = || {
@@ -57,22 +85,15 @@ impl JobProcessor {
 
         let update_metadata_fn = |metadata: TrackMetadata| {
             let _ = QueueManager::update_job_metadata(&job_id, |job| {
-                job.metadata = metadata;
+                job.metadata = metadata.clone();
             });
+
+            // Update floating panel with metadata
+            FloatingPanelManager::update_status(app, "fetching", 5.0, &metadata.title, get_queued_count());
         };
 
-        #[cfg(target_os = "macos")]
-        let get_queued_count = || -> usize {
-            DOWNLOAD_QUEUE
-                .lock()
-                .map(|q| q.iter().filter(|j| j.status == DownloadStatus::Queued).count())
-                .unwrap_or(0)
-        };
-
-        #[cfg(target_os = "macos")]
-        {
-            FloatingPanelManager::update_status("fetching", 1.0, &initial_title, get_queued_count());
-        }
+        // Update floating panel - works on all platforms now
+        FloatingPanelManager::update_status(app, "fetching", 1.0, &initial_title, get_queued_count());
 
         // Delegate to service-specific download methods
         let result = match service {
@@ -128,10 +149,8 @@ impl JobProcessor {
                 })?;
                 QueueManager::emit_update(app);
 
-                #[cfg(target_os = "macos")]
-                {
-                    FloatingPanelManager::update_status("complete", 100.0, "Done!", get_queued_count());
-                }
+                // Update floating panel - cross-platform
+                FloatingPanelManager::update_status(app, "complete", 100.0, "Done!", get_queued_count());
 
                 Ok(output_path)
             }
@@ -143,10 +162,8 @@ impl JobProcessor {
                 })?;
                 QueueManager::emit_update(app);
 
-                #[cfg(target_os = "macos")]
-                {
-                    FloatingPanelManager::update_status("error", 0.0, "Error", get_queued_count());
-                }
+                // Update floating panel - cross-platform
+                FloatingPanelManager::update_status(app, "error", 0.0, "Error", get_queued_count());
 
                 Err(e)
             }

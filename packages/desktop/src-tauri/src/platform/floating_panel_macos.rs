@@ -2,9 +2,10 @@
 // Floating panel implementation using NSPanel and WKWebView
 
 use std::sync::Mutex;
+use tauri::AppHandle; // Always import AppHandle for update_status API consistency
 
 #[cfg(target_os = "macos")]
-use tauri::{AppHandle, Emitter, Manager};
+use tauri::{Emitter, Manager};
 
 #[cfg(target_os = "macos")]
 use cocoa::base::{id, nil, YES, NO};
@@ -185,7 +186,8 @@ impl FloatingPanelManager {
     }
 
     /// Update the floating panel status (call JavaScript in webview)
-    pub fn update_status(state: &str, progress: f32, title: &str, queue_count: usize) {
+    /// app parameter is for API consistency with Tauri version (not used on macOS)
+    pub fn update_status(_app: &AppHandle, state: &str, progress: f32, title: &str, queue_count: usize) {
         use cocoa::base::{id, nil};
         use cocoa::foundation::NSString;
         #[allow(unused_imports)]

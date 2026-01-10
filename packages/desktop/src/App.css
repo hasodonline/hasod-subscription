@@ -870,12 +870,15 @@ html[dir="rtl"] .google-btn svg {
 
 .job-title.clickable {
   cursor: pointer;
-  transition: color 0.2s;
+  color: #3B8ED0;
+  text-decoration: underline;
+  transition: all 0.2s;
+  font-weight: 500;
 }
 
 .job-title.clickable:hover {
-  color: #3B8ED0;
-  text-decoration: underline;
+  color: #5DAEF0;
+  transform: translateX(2px);
 }
 
 .complete-actions {
