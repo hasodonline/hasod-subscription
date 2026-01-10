@@ -503,8 +503,29 @@ details.progress-box[open] summary {
 
 /* Queue List */
 .queue-list {
-  /* No max-height - let it flow naturally with page scroll */
-  padding-bottom: 20px;
+  max-height: 70vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scroll-behavior: smooth;
+  margin-bottom: 10px;
+}
+
+.queue-list::-webkit-scrollbar {
+  width: 10px;
+}
+
+.queue-list::-webkit-scrollbar-track {
+  background: #f0f0f0;
+  border-radius: 5px;
+}
+
+.queue-list::-webkit-scrollbar-thumb {
+  background: #3B8ED0;
+  border-radius: 5px;
+}
+
+.queue-list::-webkit-scrollbar-thumb:hover {
+  background: #2d7ac0;
 }
 
 .queue-item {
