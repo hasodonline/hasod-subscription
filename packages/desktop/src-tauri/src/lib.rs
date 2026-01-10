@@ -199,6 +199,9 @@ pub fn run() {
             commands::is_floating_window_open,
             commands::get_clipboard_url,
             commands::handle_dropped_link,
+            // Settings
+            commands::get_english_only_mode,
+            commands::set_english_only_mode,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

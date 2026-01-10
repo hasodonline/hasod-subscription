@@ -4,6 +4,7 @@ pub mod models;
 pub mod services;
 pub mod queue;
 pub mod processor;
+pub mod transliteration;
 
 // Re-export common types
 pub use models::{

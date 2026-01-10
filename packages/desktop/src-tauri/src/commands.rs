@@ -353,3 +353,17 @@ pub fn handle_dropped_link(url: String) -> Result<String, String> {
     println!("[DragDrop] Normalized URL: {}", normalized_url);
     Ok(normalized_url)
 }
+
+// ============================================================================
+// Settings Commands
+// ============================================================================
+
+#[tauri::command]
+pub fn get_english_only_mode() -> bool {
+    crate::utils::get_english_only_mode()
+}
+
+#[tauri::command]
+pub fn set_english_only_mode(enabled: bool) -> Result<(), String> {
+    crate::utils::set_english_only_mode(enabled)
+}

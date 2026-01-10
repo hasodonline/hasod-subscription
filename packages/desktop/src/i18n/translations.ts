@@ -71,6 +71,8 @@ export const translations = {
       featureQuality: 'איכות גבוהה:',
       featureQualityDesc: 'מוריד את האיכות הטובה ביותר הזמינה',
       saveLocation: 'קבצים נשמרים ב: ~/Downloads/Hasod Downloads/',
+      englishOnlyMode: 'שמות קבצים באנגלית בלבד',
+      englishOnlyHint: '(מתרגם עברית לאנגלית)',
     },
     // Login progress messages
     login: {
@@ -185,6 +187,8 @@ export const translations = {
       featureQuality: 'High Quality:',
       featureQualityDesc: 'Downloads best available audio quality',
       saveLocation: 'Files saved to: ~/Downloads/Hasod Downloads/',
+      englishOnlyMode: 'English Only Filenames',
+      englishOnlyHint: '(Transliterates Hebrew to English)',
     },
     // Login progress messages
     login: {

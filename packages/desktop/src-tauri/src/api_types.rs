@@ -169,6 +169,40 @@ pub struct SpotifyPlaylistTrack {
 }
 
 // ============================================================================
+// Transliteration API Types
+// ============================================================================
+
+/// Media item for transliteration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MediaItem {
+    pub title: String,
+    pub artist: String,
+    pub album: String,
+}
+
+/// Request for POST /transliterate
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransliterateRequest {
+    pub items: Vec<MediaItem>,
+}
+
+/// Transliterated item with original and transliterated versions
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransliteratedItem {
+    pub original: MediaItem,
+    pub transliterated: MediaItem,
+}
+
+/// Response from POST /transliterate
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TransliterateResponse {
+    pub success: bool,
+    pub items: Vec<TransliteratedItem>,
+    #[serde(rename = "tokensUsed", skip_serializing_if = "Option::is_none")]
+    pub tokens_used: Option<i32>,
+}
+
+// ============================================================================
 // Download Link Retrieval API Types
 // ============================================================================
 
@@ -368,6 +402,42 @@ impl HasodApiClient {
 
         if !api_response.success {
             return Err("Deezer API returned success=false".to_string());
+        }
+
+        Ok(api_response)
+    }
+
+    /// Transliterate Hebrew media names to English
+    /// Requires authentication token for hasod-downloader subscription
+    pub async fn transliterate(
+        &self,
+        items: Vec<MediaItem>,
+        auth_token: &str,
+    ) -> Result<TransliterateResponse, String> {
+        let url = format!("{}/transliterate", self.base_url);
+
+        let request = TransliterateRequest { items };
+
+        let client = reqwest::Client::new();
+        let response = client
+            .post(&url)
+            .header("Authorization", format!("Bearer {}", auth_token))
+            .json(&request)
+            .send()
+            .await
+            .map_err(|e| format!("Transliteration API request failed: {}", e))?;
+
+        if !response.status().is_success() {
+            return Err(format!("Transliteration API failed with status: {}", response.status()));
+        }
+
+        let api_response: TransliterateResponse = response
+            .json()
+            .await
+            .map_err(|e| format!("Failed to parse transliteration API response: {}", e))?;
+
+        if !api_response.success {
+            return Err("Transliteration API returned success=false".to_string());
         }
 
         Ok(api_response)

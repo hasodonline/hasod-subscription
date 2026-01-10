@@ -1,5 +1,6 @@
 // Download Tab Component - Main download interface
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { invoke } from '@tauri-apps/api/core';
 import type { QueueStatus } from '../../api/tauri';
 import { useLanguage } from '../../i18n';
 import { QueueList } from '../queue/QueueList';
@@ -36,6 +37,24 @@ export function DownloadTab({
   const { t } = useLanguage();
   const [downloadUrl, setDownloadUrl] = useState('');
   const [adding, setAdding] = useState(false);
+  const [englishOnlyMode, setEnglishOnlyMode] = useState(false);
+
+  // Load English Only mode on mount
+  useEffect(() => {
+    invoke<boolean>('get_english_only_mode')
+      .then(setEnglishOnlyMode)
+      .catch(console.error);
+  }, []);
+
+  const handleToggleEnglishOnly = async () => {
+    const newValue = !englishOnlyMode;
+    try {
+      await invoke('set_english_only_mode', { enabled: newValue });
+      setEnglishOnlyMode(newValue);
+    } catch (error) {
+      console.error('Failed to toggle English Only mode:', error);
+    }
+  };
 
   const handleAddToQueue = async () => {
     if (!downloadUrl.trim()) {
@@ -69,6 +88,25 @@ export function DownloadTab({
           {t.download.licenseWarning}
         </div>
       )}
+
+      {/* English Only Mode Toggle */}
+      <div className="settings-row">
+        <label className="toggle-container">
+          <input
+            type="checkbox"
+            checked={englishOnlyMode}
+            onChange={handleToggleEnglishOnly}
+            className="toggle-checkbox"
+          />
+          <span className="toggle-slider"></span>
+          <span className="toggle-label">
+            {t.download.englishOnlyMode || 'English Only Filenames'}
+          </span>
+          <span className="toggle-hint">
+            {t.download.englishOnlyHint || '(Transliterates Hebrew to English)'}
+          </span>
+        </label>
+      </div>
 
       {/* Supported Services Banner */}
       <div className="services-banner">

@@ -92,14 +92,45 @@ impl SoundCloudDownloader {
 
         update_status_fn(job_id, DownloadStatus::Downloading, 10.0, "Downloading...");
 
-        // Step 4: Listen to progress
+        // Step 4: Listen to progress and capture actual filename
         let mut last_progress: f32 = 10.0;
+        let mut actual_output_path: Option<String> = None;
 
         while let Some(event) = rx.recv().await {
             match event {
                 tauri_plugin_shell::process::CommandEvent::Stdout(line) => {
                     let line_str = String::from_utf8_lossy(&line).to_string();
                     println!("[yt-dlp] {}", line_str);
+
+                    // Capture actual filename from yt-dlp output
+                    // Can be: [ExtractAudio] Destination: /path/file.mp3
+                    // Or: [ExtractAudio] Not converting audio /path/file.mp3
+                    // Or: [Merger] Merging formats into "/path/file.mp3"
+                    if line_str.contains("[ExtractAudio]") || line_str.contains("[Merger]") {
+                        // Extract path from quotes or after "audio "
+                        if let Some(quoted) = line_str.split('"').nth(1) {
+                            if quoted.ends_with(".mp3") {
+                                actual_output_path = Some(quoted.to_string());
+                                println!("[SoundCloud] Captured actual output from quotes: {}", quoted);
+                            }
+                        } else if line_str.contains("audio /") {
+                            if let Some(path_part) = line_str.split("audio ").nth(1) {
+                                let path = path_part.split(';').next().unwrap_or(path_part).trim();
+                                if path.ends_with(".mp3") {
+                                    actual_output_path = Some(path.to_string());
+                                    println!("[SoundCloud] Captured actual output from audio: {}", path);
+                                }
+                            }
+                        } else if line_str.contains("Destination:") {
+                            if let Some(path_str) = line_str.split("Destination:").nth(1) {
+                                let path = path_str.trim();
+                                if path.ends_with(".mp3") {
+                                    actual_output_path = Some(path.to_string());
+                                    println!("[SoundCloud] Captured actual output from Destination: {}", path);
+                                }
+                            }
+                        }
+                    }
 
                     // Parse progress from yt-dlp output
                     if let Some(pct) = Self::parse_progress(&line_str) {
@@ -146,7 +177,10 @@ impl SoundCloudDownloader {
         update_status_fn(job_id, DownloadStatus::Complete, 100.0, "Download complete!");
         emit_queue_fn();
 
-        Ok(output_path.to_string_lossy().to_string())
+        // Return actual path if captured, otherwise use calculated path
+        let final_path = actual_output_path.unwrap_or_else(|| output_path.to_string_lossy().to_string());
+        println!("[SoundCloud] Returning output path: {}", final_path);
+        Ok(final_path)
     }
 
     /// Parse yt-dlp progress output
