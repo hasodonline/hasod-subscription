@@ -18,6 +18,8 @@ export function AudioPlayer({ filePath, onClose }: AudioPlayerProps) {
 
     // Convert file path to Tauri URL
     const audioSrc = convertFileSrc(filePath);
+    console.log('[AudioPlayer] Loading file:', filePath);
+    console.log('[AudioPlayer] Tauri URL:', audioSrc);
     audioRef.current.src = audioSrc;
     audioRef.current.load();
   }, [filePath]);
@@ -29,8 +31,14 @@ export function AudioPlayer({ filePath, onClose }: AudioPlayerProps) {
     const updateTime = () => setCurrentTime(audio.currentTime);
     const updateDuration = () => setDuration(audio.duration);
     const handleEnded = () => setIsPlaying(false);
-    const handleError = () => {
-      console.error('Audio playback error');
+    const handleError = (e: Event) => {
+      const audioEl = e.target as HTMLAudioElement;
+      console.error('[AudioPlayer] Audio error:', {
+        error: audioEl.error,
+        code: audioEl.error?.code,
+        message: audioEl.error?.message,
+        src: audioEl.src,
+      });
       setIsPlaying(false);
     };
 
@@ -47,15 +55,21 @@ export function AudioPlayer({ filePath, onClose }: AudioPlayerProps) {
     };
   }, []);
 
-  const handlePlayPause = () => {
+  const handlePlayPause = async () => {
     if (!audioRef.current) return;
 
     if (isPlaying) {
       audioRef.current.pause();
+      setIsPlaying(false);
     } else {
-      audioRef.current.play();
+      try {
+        await audioRef.current.play();
+        setIsPlaying(true);
+      } catch (error) {
+        console.error('[AudioPlayer] Play failed:', error);
+        alert('Failed to play audio. The file might be corrupted or in an unsupported format.');
+      }
     }
-    setIsPlaying(!isPlaying);
   };
 
   const handleStop = () => {
