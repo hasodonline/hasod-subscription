@@ -11,12 +11,11 @@ use crate::download::{
     QueueManager,
 };
 use crate::download::services::{
-    YouTubeDownloader, SpotifyDownloader, DeezerDownloader,
+    YouTubeDownloader, SpotifyDownloader, SoundCloudDownloader, DeezerDownloader,
     AppleMusicDownloader, AppleMusicTrackInfo,
 };
 use crate::download::queue::{DOWNLOAD_QUEUE};
 
-#[cfg(target_os = "macos")]
 use crate::platform::FloatingPanelManager;
 
 // ============================================================================
@@ -125,6 +124,19 @@ impl JobProcessor {
             }
             MusicService::YouTube => {
                 YouTubeDownloader::download_track(
+                    app,
+                    &url,
+                    &base_output_dir,
+                    download_context.as_ref().unwrap_or(&DownloadContext::Single),
+                    &job_id,
+                    update_status_fn,
+                    emit_queue_fn,
+                    update_metadata_fn,
+                )
+                .await
+            }
+            MusicService::SoundCloud => {
+                SoundCloudDownloader::download_track(
                     app,
                     &url,
                     &base_output_dir,

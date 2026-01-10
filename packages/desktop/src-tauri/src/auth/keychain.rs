@@ -1,9 +1,8 @@
-// Keychain storage for authentication data
+// File-based storage for authentication data (replaces keychain)
 
-use keyring::Entry;
 use serde::{Deserialize, Serialize};
-
-const KEYCHAIN_SERVICE: &str = "hasod-downloads";
+use std::fs;
+use std::path::PathBuf;
 
 /// Stored authentication data
 #[derive(Debug, Serialize, Deserialize, Clone)]
@@ -15,43 +14,48 @@ pub struct StoredAuth {
     pub device_id: String,
 }
 
-/// Get a value from the system keychain
-fn get_keychain_entry(key: &str) -> Option<String> {
-    let entry = Entry::new(KEYCHAIN_SERVICE, key).ok()?;
-    entry.get_password().ok()
+/// Get the path to the auth storage file
+fn get_auth_file_path() -> PathBuf {
+    let home = dirs::home_dir().expect("Failed to get home directory");
+    let config_dir = home.join(".hasod_downloads");
+    std::fs::create_dir_all(&config_dir).ok();
+    config_dir.join("auth.json")
 }
 
-/// Set a value in the system keychain
-fn set_keychain_entry(key: &str, value: &str) -> Result<(), String> {
-    let entry =
-        Entry::new(KEYCHAIN_SERVICE, key).map_err(|e| format!("Keychain entry error: {}", e))?;
-    entry
-        .set_password(value)
-        .map_err(|e| format!("Keychain set error: {}", e))
-}
+/// Save authentication data to a file
+pub fn save_auth_to_keychain(auth: &StoredAuth) -> Result<(), String> {
+    let path = get_auth_file_path();
+    let json = serde_json::to_string_pretty(auth)
+        .map_err(|e| format!("JSON serialize error: {}", e))?;
 
-/// Delete a value from the system keychain
-fn delete_keychain_entry(key: &str) -> Result<(), String> {
-    let entry =
-        Entry::new(KEYCHAIN_SERVICE, key).map_err(|e| format!("Keychain entry error: {}", e))?;
-    // Ignore error if entry doesn't exist
-    let _ = entry.delete_password();
+    fs::write(&path, json)
+        .map_err(|e| format!("Failed to write auth file: {}", e))?;
+
+    println!("[Auth] Saved auth to file: {:?}", path);
     Ok(())
 }
 
-/// Save authentication data to the system keychain
-pub fn save_auth_to_keychain(auth: &StoredAuth) -> Result<(), String> {
-    let json = serde_json::to_string(auth).map_err(|e| format!("JSON serialize error: {}", e))?;
-    set_keychain_entry("auth_data", &json)
-}
-
-/// Retrieve authentication data from the system keychain
+/// Retrieve authentication data from file
 pub fn get_auth_from_keychain() -> Option<StoredAuth> {
-    let json = get_keychain_entry("auth_data")?;
+    let path = get_auth_file_path();
+
+    if !path.exists() {
+        return None;
+    }
+
+    let json = fs::read_to_string(&path).ok()?;
     serde_json::from_str(&json).ok()
 }
 
-/// Clear authentication data from the system keychain
+/// Clear authentication data from file
 pub fn clear_auth_from_keychain() -> Result<(), String> {
-    delete_keychain_entry("auth_data")
+    let path = get_auth_file_path();
+
+    if path.exists() {
+        fs::remove_file(&path)
+            .map_err(|e| format!("Failed to delete auth file: {}", e))?;
+    }
+
+    println!("[Auth] Cleared auth file");
+    Ok(())
 }
