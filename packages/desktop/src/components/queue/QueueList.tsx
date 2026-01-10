@@ -81,7 +81,7 @@ export function QueueList({
       </div>
 
       <div className="queue-list">
-        {queueStatus.jobs.map(job => {
+        {[...queueStatus.jobs].reverse().map(job => {
           const style = serviceStyles[job.service] || serviceStyles.Unknown;
           return (
             <QueueItem

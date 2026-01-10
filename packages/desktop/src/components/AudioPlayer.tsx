@@ -20,6 +20,23 @@ export function AudioPlayer({ filePath, onClose }: AudioPlayerProps) {
     const audioSrc = convertFileSrc(filePath);
     audioRef.current.src = audioSrc;
     audioRef.current.load();
+
+    // Auto-play when file loads
+    const handleCanPlay = async () => {
+      if (audioRef.current) {
+        try {
+          await audioRef.current.play();
+          setIsPlaying(true);
+        } catch (error) {
+          console.error('[AudioPlayer] Auto-play failed:', error);
+        }
+      }
+    };
+
+    audioRef.current.addEventListener('canplay', handleCanPlay);
+    return () => {
+      audioRef.current?.removeEventListener('canplay', handleCanPlay);
+    };
   }, [filePath]);
 
   useEffect(() => {
@@ -90,7 +107,13 @@ export function AudioPlayer({ filePath, onClose }: AudioPlayerProps) {
 
   return (
     <div className="audio-player" onClick={(e) => e.stopPropagation()}>
-      <audio ref={audioRef} preload="metadata" />
+      <audio
+        ref={audioRef}
+        preload="metadata"
+        controlsList="nodownload nofullscreen noremoteplayback"
+        disablePictureInPicture
+        playsInline
+      />
 
       <div className="player-controls">
         <button

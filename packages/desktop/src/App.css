@@ -524,20 +524,27 @@ details.progress-box[open] summary {
   background: #f8f9fa;
 }
 
+.queue-item.queued {
+  opacity: 0.5;
+}
+
 .queue-item.downloading {
-  background: #e3f2fd;
+  opacity: 0.6;
 }
 
 .queue-item.converting {
-  background: #fff3e0;
+  opacity: 0.6;
 }
 
 .queue-item.complete {
-  opacity: 0.7;
+  /* Vivid and highlighted - no opacity, green accent */
+  opacity: 1 !important;
+  border-left: 3px solid #43e97b;
 }
 
 .queue-item.error {
-  background: #ffebee;
+  opacity: 0.5;
+  border-left: 3px solid #f5576c;
 }
 
 .job-icon {
